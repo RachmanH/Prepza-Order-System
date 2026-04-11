@@ -59,20 +59,59 @@ class VoiceOrderController extends Controller
         ]);
     }
 
-    private function processOrderFromText(string $rawText): JsonResponse
+    public function preview(Request $request): JsonResponse
     {
-        $rawText = Str::of($rawText)->squish()->toString();
+        $payload = $request->validate([
+            'raw_text' => ['required', 'string', 'max:500'],
+        ]);
 
-        $normalizedText = $this->normalizeText($rawText);
+        $analysis = $this->analyzeOrderText($payload['raw_text']);
+        $validated = $analysis['validated'];
 
-        $parsed = $this->parseByRules($normalizedText);
-
-        if (empty($parsed['items'])) {
-            $parsed['items'] = $this->parseWithFallback($normalizedText);
-            $parsed['confidence'] = 'fallback';
+        if ($validated['status'] === 'invalid') {
+            return response()->json([
+                'status' => 'invalid',
+                'message' => 'Pesanan tidak dikenali, silakan ulangi.',
+                'items' => [],
+            ], 422);
         }
 
-        $validated = $this->validateItems($parsed['items']);
+        if ($validated['status'] === 'partial') {
+            return response()->json([
+                'status' => 'partial',
+                'message' => 'Sebagian menu tidak tersedia: '.implode(', ', $validated['invalid']),
+                'items' => collect($validated['valid_items'])
+                    ->map(fn (array $item): array => [
+                        'name' => $item['menu']->name,
+                        'qty' => $item['qty'],
+                    ])
+                    ->values()
+                    ->all(),
+                'invalid' => $validated['invalid'],
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'valid',
+            'message' => 'Pesanan siap dikonfirmasi.',
+            'items' => collect($validated['valid_items'])
+                ->map(fn (array $item): array => [
+                    'name' => $item['menu']->name,
+                    'qty' => $item['qty'],
+                ])
+                ->values()
+                ->all(),
+            'confidence' => $analysis['parsed']['confidence'] ?? 'low',
+        ]);
+    }
+
+    private function processOrderFromText(string $rawText): JsonResponse
+    {
+        $analysis = $this->analyzeOrderText($rawText);
+        $rawText = $analysis['raw_text'];
+        $normalizedText = $analysis['normalized_text'];
+        $parsed = $analysis['parsed'];
+        $validated = $analysis['validated'];
 
         if ($validated['status'] === 'invalid') {
             return response()->json([
@@ -160,6 +199,31 @@ class VoiceOrderController extends Controller
         ], 201);
     }
 
+    /**
+     * @return array{raw_text:string,normalized_text:string,parsed:array{items:array<int,array{name:string,qty:int}>,confidence:string},validated:array<string,mixed>}
+     */
+    private function analyzeOrderText(string $rawText): array
+    {
+        $rawText = Str::of($rawText)->squish()->toString();
+        $normalizedText = $this->normalizeText($rawText);
+        $parsed = [
+            'items' => $this->parseWithValidationModel($normalizedText),
+            'confidence' => 'ai_primary',
+        ];
+
+        if (empty($parsed['items'])) {
+            $parsed = $this->parseByRules($normalizedText);
+            $parsed['confidence'] = empty($parsed['items']) ? 'low' : 'rules_backup';
+        }
+
+        return [
+            'raw_text' => $rawText,
+            'normalized_text' => $normalizedText,
+            'parsed' => $parsed,
+            'validated' => $this->validateItems($parsed['items']),
+        ];
+    }
+
     private function normalizeText(string $rawText): string
     {
         $text = Str::of($rawText)->lower()->squish()->toString();
@@ -175,10 +239,11 @@ class VoiceOrderController extends Controller
             'dong',
             'ya',
             'kak',
+            'oke',
         ];
 
         foreach ($noiseWords as $noiseWord) {
-            $pattern = '/\b'.str_replace('\ ', '\\s+', preg_quote($noiseWord, '/')).'\b/';
+            $pattern = '/\b'.str_replace(' ', '\\s+', preg_quote($noiseWord, '/')).'\b/';
             $text = preg_replace($pattern, ' ', $text) ?? $text;
         }
 
@@ -357,7 +422,7 @@ class VoiceOrderController extends Controller
             ->toString();
     }
 
-    private function parseWithFallback(string $normalizedText): array
+    private function parseWithValidationModel(string $normalizedText): array
     {
         if ($normalizedText === '') {
             return [];
@@ -366,7 +431,7 @@ class VoiceOrderController extends Controller
         try {
             return $this->groqService->parseOrderItems($normalizedText);
         } catch (Throwable $exception) {
-            Log::warning('Groq fallback parse failed', [
+            Log::warning('Groq primary parse failed', [
                 'message' => $exception->getMessage(),
             ]);
 
@@ -431,6 +496,14 @@ class VoiceOrderController extends Controller
 
             if (! $menu) {
                 $menu = $this->findByFuzzyMatch($candidate, $menus);
+            }
+
+            if (! $menu) {
+                $aiMatchedName = $this->groqService->matchMenuCandidate($candidate, $menus->pluck('name')->all());
+
+                if ($aiMatchedName) {
+                    $menu = $nameIndex->get($aiMatchedName);
+                }
             }
 
             if (! $menu) {

@@ -38,7 +38,7 @@ return [
     'groq' => [
         'key' => env('GROQ_API_KEY'),
         'base_url' => env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
-        'model' => env('GROQ_MODEL', 'llama-3.1-8b-instant'),
+        'validation_model' => env('GROQ_VALIDATION_MODEL', 'openai/gpt-oss-20b'),
         'stt_model' => env('GROQ_STT_MODEL', 'whisper-large-v3-turbo'),
     ],
 

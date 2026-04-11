@@ -110,11 +110,14 @@ class CashierOrderController extends Controller
         $rawText = Str::of($payload['raw_text'])->squish()->toString();
         $normalizedText = $this->normalizeText($rawText);
 
-        $parsed = $this->parseByRules($normalizedText);
+        $parsed = [
+            'items' => $this->parseWithValidationModel($normalizedText),
+            'confidence' => 'ai_primary',
+        ];
 
         if (empty($parsed['items'])) {
-            $parsed['items'] = $this->parseWithFallback($normalizedText);
-            $parsed['confidence'] = 'fallback';
+            $parsed = $this->parseByRules($normalizedText);
+            $parsed['confidence'] = empty($parsed['items']) ? 'low' : 'rules_backup';
         }
 
         $validated = $this->validateItems($parsed['items']);
@@ -260,12 +263,13 @@ class CashierOrderController extends Controller
             'dong',
             'ya',
             'kak',
-            'tambahkan',
-            'tambah',
+              'oke',
+              'tambahkan',
+              'tambah',
         ];
 
         foreach ($noiseWords as $noiseWord) {
-            $pattern = '/\b'.str_replace('\ ', '\\s+', preg_quote($noiseWord, '/')).'\b/';
+            $pattern = '/\b'.str_replace(' ', '\\s+', preg_quote($noiseWord, '/')).'\b/';
             $text = preg_replace($pattern, ' ', $text) ?? $text;
         }
 
@@ -444,7 +448,7 @@ class CashierOrderController extends Controller
             ->toString();
     }
 
-    private function parseWithFallback(string $normalizedText): array
+    private function parseWithValidationModel(string $normalizedText): array
     {
         if ($normalizedText === '') {
             return [];
@@ -453,7 +457,7 @@ class CashierOrderController extends Controller
         try {
             return $this->groqService->parseOrderItems($normalizedText);
         } catch (Throwable $exception) {
-            Log::warning('Groq fallback parse failed', [
+            Log::warning('Groq primary parse failed', [
                 'message' => $exception->getMessage(),
             ]);
 
@@ -518,6 +522,14 @@ class CashierOrderController extends Controller
 
             if (! $menu) {
                 $menu = $this->findByFuzzyMatch($candidate, $menus);
+            }
+
+            if (! $menu) {
+                $aiMatchedName = $this->groqService->matchMenuCandidate($candidate, $menus->pluck('name')->all());
+
+                if ($aiMatchedName) {
+                    $menu = $nameIndex->get($aiMatchedName);
+                }
             }
 
             if (! $menu) {

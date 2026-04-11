@@ -7,7 +7,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/menus', [MenuController::class, 'index']);
+Route::post('/menus/resolve', [MenuController::class, 'resolve']);
 Route::post('/orders/voice', [VoiceOrderController::class, 'store']);
+Route::post('/orders/voice/preview', [VoiceOrderController::class, 'preview']);
 Route::post('/orders/voice/transcribe', [VoiceOrderController::class, 'transcribe']);
 
 Route::get('/cashier/orders', [CashierOrderController::class, 'index']);

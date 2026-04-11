@@ -408,6 +408,7 @@
                             this.resetSilenceTimer();
 
                             let interimTranscript = '';
+                            let finalizeDraft = false;
 
                             for (let i = event.resultIndex; i < event.results.length; i++) {
                                 const current = (event.results[i][0]?.transcript || '').trim();
@@ -416,6 +417,11 @@
                                 }
 
                                 if (event.results[i].isFinal) {
+                                    if (this.listeningTarget === 'customer' && this.isFinalizeCommand(current)) {
+                                        finalizeDraft = true;
+                                        continue;
+                                    }
+
                                     this.appendFinalSpeech(current);
                                     continue;
                                 }
@@ -425,6 +431,21 @@
 
                             this.speechInterimCurrent = interimTranscript;
                             this.syncListeningTargetText();
+
+                            if (finalizeDraft && this.listeningTarget === 'customer' && this.customerSpeechCommitted.trim()) {
+                                this.shouldKeepListening = false;
+                                this.clearSilenceTimer();
+                                if (this.recognition) {
+                                    try {
+                                        this.recognition.stop();
+                                    } catch (error) {
+                                        this.isListening = false;
+                                    }
+                                }
+
+                                this.rawText = this.customerSpeechCommitted.trim();
+                                this.submitOrder();
+                            }
                         };
 
                         this.recognition.onend = () => {
@@ -476,12 +497,26 @@
                     },
 
                     appendFinalSpeech(text) {
+                        if (this.listeningTarget === 'customer' && this.isFinalizeCommand(text)) {
+                            return;
+                        }
+
                         if (this.listeningTarget === 'cashier') {
                             this.cashierSpeechCommitted = `${this.cashierSpeechCommitted} ${text}`.trim();
                             return;
                         }
 
                         this.customerSpeechCommitted = `${this.customerSpeechCommitted} ${text}`.trim();
+                    },
+
+                    isFinalizeCommand(text) {
+                        const normalized = String(text)
+                            .toLowerCase()
+                            .replace(/[^a-z\s]/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+
+                        return ['oke', 'ok', 'okay'].includes(normalized);
                     },
 
                     syncListeningTargetText() {
@@ -491,7 +526,6 @@
                         }
 
                         this.rawText = `${this.customerSpeechCommitted} ${this.speechInterimCurrent}`.trim();
-                        this.detectedItems = this.previewDetectedItems(this.rawText);
                     },
 
                     toggleListening(target = 'customer') {
@@ -606,6 +640,13 @@
                             return;
                         }
 
+                        const handledCommand = await this.applyVoiceCommandToCashierOrder(order, this.cashierAppendText);
+
+                        if (handledCommand) {
+                            this.cashierAppendText = '';
+                            return;
+                        }
+
                         this.cashierBusy = true;
                         try {
                             const response = await axios.post(`/api/cashier/orders/${order.id}/append-voice`, {
@@ -675,63 +716,38 @@
                         }
                     },
 
-                    previewDetectedItems(rawText) {
-                        if (!rawText || this.menus.length === 0) {
-                            return [];
+                    async requestValidatedItems(rawText) {
+                        const normalized = String(rawText || '').trim();
+
+                        if (!normalized) {
+                            return {
+                                status: 'invalid',
+                                message: 'Pesanan kosong.',
+                                items: [],
+                            };
                         }
 
-                        const clean = rawText
-                            .toLowerCase()
-                            .replace(/\b(?:saya mau|aku mau|saya pesan|aku pesan|mau|pesan|tolong|dong|ya|kak)\b/g, ' ')
-                            .replace(/\s+/g, ' ')
-                            .trim();
-                        const parts = clean
-                            .split(/\s*(?:,| dan | sama | plus |\+)\s*/)
-                            .map((p) => p.trim())
-                            .filter((p) => p.length > 0);
-
-                        const lookup = this.buildMenuLookup();
-                        const grouped = new Map();
-
-                        parts.forEach((part) => {
-                            const preparedPart = this.normalizePossessiveSuffix(this.normalizeNumberWords(part));
-                            const extractedItems = this.extractItemsFromSegment(preparedPart);
-
-                            extractedItems.forEach((parsed) => {
-                                const canonicalName = lookup.get(parsed.name);
-                                if (!canonicalName) {
-                                    return;
-                                }
-
-                                grouped.set(canonicalName, (grouped.get(canonicalName) || 0) + parsed.qty);
+                        try {
+                            const response = await axios.post('/api/orders/voice/preview', {
+                                raw_text: normalized,
                             });
-                        });
 
-                        return Array.from(grouped.entries()).map(([name, qty]) => ({ name, qty }));
-                    },
+                            return {
+                                status: response.data.status || 'valid',
+                                message: response.data.message || '',
+                                items: response.data.items || [],
+                                invalid: response.data.invalid || [],
+                            };
+                        } catch (error) {
+                            const data = error?.response?.data || {};
 
-                    buildMenuLookup() {
-                        const lookup = new Map();
-
-                        this.menus.forEach((menu) => {
-                            const canonical = String(menu.name || '').toLowerCase().trim();
-                            if (!canonical) {
-                                return;
-                            }
-
-                            lookup.set(canonical, canonical);
-
-                            if (Array.isArray(menu.aliases)) {
-                                menu.aliases.forEach((alias) => {
-                                    const aliasName = String(alias.normalized_alias || alias.alias || '').toLowerCase().trim();
-                                    if (aliasName) {
-                                        lookup.set(aliasName, canonical);
-                                    }
-                                });
-                            }
-                        });
-
-                        return lookup;
+                            return {
+                                status: data.status || 'invalid',
+                                message: data.message || 'Validasi pesanan gagal.',
+                                items: data.items || [],
+                                invalid: data.invalid || [],
+                            };
+                        }
                     },
 
                     normalizeNumberWords(segment) {
@@ -787,141 +803,6 @@
                         return { name, qty };
                     },
 
-                    extractItemsFromSegment(segment) {
-                        const clean = String(segment)
-                            .replace(/\bx(\d+)\b/g, '$1')
-                            .replace(/\b(\d+)x\b/g, '$1')
-                            .replace(/\s+/g, ' ')
-                            .trim();
-
-                        const result = [];
-
-                        if (/^\d+/.test(clean)) {
-                            const leadPattern = /(\d+)\s*(?:x|kali)?\s+([a-z0-9\s]+?)(?=(?:\s+\d+\s*(?:x|kali)?\s+[a-z]|$))/g;
-                            let match;
-                            while ((match = leadPattern.exec(clean)) !== null) {
-                                const name = match[2]
-                                    .replace(/\b(?:x|kali)\b/g, ' ')
-                                    .replace(/\s+/g, ' ')
-                                    .trim();
-
-                                if (name) {
-                                    result.push({ name, qty: Math.max(1, parseInt(match[1], 10)) });
-                                }
-                            }
-                        } else {
-                            const tailPattern = /([a-z0-9\s]+?)\s+(?:x\s*)?(\d+)\s*(?:x|kali)?(?=(?:\s+[a-z][a-z0-9\s]*?\s+(?:x\s*)?\d+\s*(?:x|kali)?|$))/g;
-                            let match;
-                            while ((match = tailPattern.exec(clean)) !== null) {
-                                const name = match[1]
-                                    .replace(/\b(?:x|kali)\b/g, ' ')
-                                    .replace(/\s+/g, ' ')
-                                    .trim();
-
-                                if (name) {
-                                    result.push({ name, qty: Math.max(1, parseInt(match[2], 10)) });
-                                }
-                            }
-                        }
-
-                        if (result.length > 0) {
-                            return result;
-                        }
-
-                        const lookup = this.buildMenuLookup();
-                        const repeated = this.resolveRepeatedMenuName(clean, lookup);
-                        if (repeated) {
-                            return [repeated];
-                        }
-
-                        const composite = this.resolveCompositeMenuSequence(clean, lookup);
-                        if (composite.length > 0) {
-                            return composite;
-                        }
-
-                        const single = this.extractQtyAndNameFromSegment(clean);
-                        return single.name ? [single] : [];
-                    },
-
-                    resolveRepeatedMenuName(segment, lookup) {
-                        const normalized = String(segment).replace(/\s+/g, ' ').trim();
-                        if (!normalized) {
-                            return null;
-                        }
-
-                        const canonicalNames = Array.from(new Set(Array.from(lookup.values())))
-                            .sort((a, b) => b.length - a.length);
-
-                        for (const name of canonicalNames) {
-                            const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            const pattern = new RegExp(`^(?:${escaped})(?:\\s+${escaped})+$`);
-                            if (!pattern.test(normalized)) {
-                                continue;
-                            }
-
-                            const count = (normalized.match(new RegExp(escaped, 'g')) || []).length;
-                            if (count >= 2) {
-                                return { name, qty: count };
-                            }
-                        }
-
-                        return null;
-                    },
-
-                    resolveCompositeMenuSequence(segment, lookup) {
-                        const normalized = String(segment).replace(/\s+/g, ' ').trim();
-                        if (!normalized) {
-                            return [];
-                        }
-
-                        const words = normalized.split(' ').filter(Boolean);
-                        if (words.length < 2) {
-                            return [];
-                        }
-
-                        const canonicalNames = Array.from(new Set(Array.from(lookup.values())))
-                            .map((name) => ({ name, tokens: name.split(' ') }))
-                            .sort((a, b) => (b.tokens.length * 1000 + b.name.length) - (a.tokens.length * 1000 + a.name.length));
-
-                        if (canonicalNames.length === 0) {
-                            return [];
-                        }
-
-                        const counts = new Map();
-                        let cursor = 0;
-
-                        while (cursor < words.length) {
-                            let matched = null;
-
-                            for (const item of canonicalNames) {
-                                if (cursor + item.tokens.length > words.length) {
-                                    continue;
-                                }
-
-                                const slice = words.slice(cursor, cursor + item.tokens.length).join(' ');
-                                if (slice === item.name) {
-                                    matched = item;
-                                    break;
-                                }
-                            }
-
-                            if (!matched) {
-                                // Skip unknown token so known menu names can still be extracted.
-                                cursor += 1;
-                                continue;
-                            }
-
-                            counts.set(matched.name, (counts.get(matched.name) || 0) + 1);
-                            cursor += matched.tokens.length;
-                        }
-
-                        if (counts.size === 0) {
-                            return [];
-                        }
-
-                        return Array.from(counts.entries()).map(([name, qty]) => ({ name, qty }));
-                    },
-
                     isMenuHighlighted(menuName) {
                         return this.detectedItems.some((item) => item.name === String(menuName).toLowerCase());
                     },
@@ -931,13 +812,43 @@
                             return;
                         }
 
+                        if (this.showConfirmModal && this.confirmingItems.length > 0) {
+                            const handledCommand = await this.applyVoiceCommandToConfirmingItems(this.rawText);
+
+                            if (handledCommand) {
+                                return;
+                            }
+                        }
+
                         this.statusMessage = 'Menganalisa pesanan...';
                         this.statusTone = 'text-slate-600';
-                        this.detectedItems = this.previewDetectedItems(this.rawText);
+
+                        const preview = await this.requestValidatedItems(this.rawText);
+
+                        if (preview.status === 'invalid') {
+                            this.detectedItems = [];
+                            this.statusMessage = preview.message || 'Pesanan tidak dikenali, silakan ulangi.';
+                            this.statusTone = 'text-rose-600';
+                            return;
+                        }
+
+                        this.detectedItems = (preview.items || []).map((item) => ({
+                            name: String(item.name || '').toLowerCase(),
+                            qty: Math.max(1, Number(item.qty || 1)),
+                        }));
 
                         if (this.detectedItems.length === 0) {
-                            this.statusMessage = 'Preview lokal belum mengenali item, validasi server tetap akan dijalankan.';
+                            this.statusMessage = 'Pesanan belum berisi item yang valid.';
                             this.statusTone = 'text-amber-600';
+                            return;
+                        }
+
+                        if (preview.status === 'partial') {
+                            this.statusMessage = preview.message || 'Sebagian menu tidak tersedia, hanya item valid yang ditampilkan.';
+                            this.statusTone = 'text-amber-600';
+                        } else {
+                            this.statusMessage = preview.message || 'Pesanan siap dikonfirmasi.';
+                            this.statusTone = 'text-emerald-600';
                         }
 
                         this.confirmingItems = [...this.detectedItems];
@@ -954,16 +865,7 @@
                     },
 
                     changeConfirmingItemQty(name, delta) {
-                        this.confirmingItems = this.confirmingItems.map((item) => {
-                            if (item.name !== name) {
-                                return item;
-                            }
-
-                            return {
-                                ...item,
-                                qty: Math.max(1, Number(item.qty || 1) + delta),
-                            };
-                        });
+                        this.updateConfirmingItemQty(name, delta);
                     },
 
                     removeConfirmingItem(name) {
@@ -977,6 +879,256 @@
                                 return qty > 1 ? `${qty} ${item.name}` : item.name;
                             })
                             .join(', ');
+                    },
+
+                    normalizeCommandText(text) {
+                        return String(text)
+                            .toLowerCase()
+                            .replace(/\b(?:saya mau|aku mau|saya pesan|aku pesan|mau|pesan|tolong|dong|ya|kak|nih|deh|please)\b/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                    },
+
+                    parseVoiceCommand(text) {
+                        const normalized = this.normalizeCommandText(text);
+                        const match = normalized.match(/^(hapus|hapuskan|buang|kurangi|kurang|tambah|tambahkan|nambah|nambahin|add)\s+(.+)$/);
+
+                        if (!match) {
+                            return null;
+                        }
+
+                        const actionWord = match[1];
+                        const targetSegment = this.normalizePossessiveSuffix(this.normalizeNumberWords(match[2]));
+                        const parsedTarget = this.extractQtyAndNameFromSegment(targetSegment);
+
+                        if (!parsedTarget.name) {
+                            return null;
+                        }
+
+                        let action = 'add';
+
+                        if (['hapus', 'hapuskan', 'buang'].includes(actionWord)) {
+                            action = 'remove';
+                        } else if (['kurangi', 'kurang'].includes(actionWord)) {
+                            action = 'decrease';
+                        }
+
+                        return {
+                            action,
+                            targetName: parsedTarget.name,
+                            qty: Math.max(1, Number(parsedTarget.qty || 1)),
+                        };
+                    },
+
+                    async resolveMenuCandidate(candidate) {
+                        const normalized = this.normalizePossessiveSuffix(this.normalizeNumberWords(this.normalizeCommandText(candidate)));
+
+                        if (!normalized) {
+                            return null;
+                        }
+
+                        try {
+                            const response = await axios.post('/api/menus/resolve', {
+                                candidate: normalized,
+                            });
+
+                            return response.data.data || null;
+                        } catch (error) {
+                            return null;
+                        }
+                    },
+
+                    updateConfirmingItemQty(name, delta) {
+                        let found = false;
+                        const nextItems = [];
+
+                        this.confirmingItems.forEach((item) => {
+                            if (item.name !== name) {
+                                nextItems.push(item);
+                                return;
+                            }
+
+                            found = true;
+                            const nextQty = Number(item.qty || 1) + delta;
+
+                            if (nextQty > 0) {
+                                nextItems.push({
+                                    ...item,
+                                    qty: nextQty,
+                                });
+                            }
+                        });
+
+                        this.confirmingItems = nextItems;
+                        return found;
+                    },
+
+                    async applyVoiceCommandToConfirmingItems(rawText) {
+                        const command = this.parseVoiceCommand(rawText);
+
+                        if (!command) {
+                            return false;
+                        }
+
+                        const resolved = await this.resolveMenuCandidate(command.targetName);
+
+                        if (!resolved || !resolved.matched_name) {
+                            this.statusMessage = 'Menu tujuan tidak ditemukan untuk perintah suara.';
+                            this.statusTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        const name = String(resolved.matched_name).toLowerCase();
+                        const qty = Math.max(1, Number(command.qty || 1));
+
+                        if (command.action === 'remove') {
+                            this.removeConfirmingItem(name);
+                        } else if (command.action === 'decrease') {
+                            const found = this.confirmingItems.find((item) => item.name === name);
+
+                            if (!found) {
+                                this.statusMessage = `Item ${name} tidak ada di daftar konfirmasi.`;
+                                this.statusTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            if (Number(found.qty || 1) <= qty) {
+                                this.removeConfirmingItem(name);
+                            } else {
+                                this.updateConfirmingItemQty(name, -qty);
+                            }
+                        } else {
+                            const found = this.confirmingItems.find((item) => item.name === name);
+
+                            if (found) {
+                                this.updateConfirmingItemQty(name, qty);
+                            } else {
+                                this.confirmingItems = [
+                                    ...this.confirmingItems,
+                                    {
+                                        name,
+                                        qty,
+                                    },
+                                ];
+                            }
+                        }
+
+                        this.rawText = this.buildRawTextFromConfirmingItems();
+                        this.detectedItems = [...this.confirmingItems];
+                        this.statusMessage = 'Daftar pesanan diperbarui lewat perintah suara.';
+                        this.statusTone = 'text-emerald-600';
+                        return true;
+                    },
+
+                    async applyVoiceCommandToCashierOrder(order, rawText) {
+                        const command = this.parseVoiceCommand(rawText);
+
+                        if (!command) {
+                            return false;
+                        }
+
+                        const resolved = await this.resolveMenuCandidate(command.targetName);
+
+                        if (!resolved || !resolved.matched_name) {
+                            this.cashierMessage = 'Menu tujuan tidak ditemukan untuk perintah suara.';
+                            this.cashierTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        const name = String(resolved.matched_name).toLowerCase();
+                        const qty = Math.max(1, Number(command.qty || 1));
+                        const currentItem = order.items?.find((item) => String(item.item_name || '').toLowerCase() === name) || null;
+
+                        if (command.action === 'remove') {
+                            if (!currentItem) {
+                                this.cashierMessage = `Item ${name} tidak ada di order ini.`;
+                                this.cashierTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            this.cashierBusy = true;
+                            try {
+                                const response = await axios.delete(`/api/cashier/orders/${order.id}/items/${currentItem.id}`);
+                                this.cashierMessage = response.data.message || 'Item berhasil dihapus dari order.';
+                                this.cashierTone = 'text-emerald-600';
+                                await this.fetchCashierOrders();
+                            } catch (error) {
+                                const data = error?.response?.data || {};
+                                this.cashierMessage = data.message || 'Gagal menghapus item.';
+                                this.cashierTone = 'text-rose-600';
+                            } finally {
+                                this.cashierBusy = false;
+                            }
+
+                            return true;
+                        }
+
+                        if (command.action === 'decrease') {
+                            if (!currentItem) {
+                                this.cashierMessage = `Item ${name} tidak ada di order ini.`;
+                                this.cashierTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            const nextQty = Number(currentItem.qty || 1) - qty;
+
+                            if (nextQty <= 0) {
+                                this.cashierBusy = true;
+                                try {
+                                    const response = await axios.delete(`/api/cashier/orders/${order.id}/items/${currentItem.id}`);
+                                    this.cashierMessage = response.data.message || 'Item berhasil dihapus dari order.';
+                                    this.cashierTone = 'text-emerald-600';
+                                    await this.fetchCashierOrders();
+                                } catch (error) {
+                                    const data = error?.response?.data || {};
+                                    this.cashierMessage = data.message || 'Gagal menghapus item.';
+                                    this.cashierTone = 'text-rose-600';
+                                } finally {
+                                    this.cashierBusy = false;
+                                }
+
+                                return true;
+                            }
+
+                            this.cashierBusy = true;
+                            try {
+                                const response = await axios.patch(`/api/cashier/orders/${order.id}/items/${currentItem.id}`, {
+                                    qty: nextQty,
+                                });
+                                this.cashierMessage = response.data.message || 'Qty item diperbarui.';
+                                this.cashierTone = 'text-emerald-600';
+                                await this.fetchCashierOrders();
+                            } catch (error) {
+                                const data = error?.response?.data || {};
+                                this.cashierMessage = data.message || 'Gagal mengubah qty item.';
+                                this.cashierTone = 'text-rose-600';
+                            } finally {
+                                this.cashierBusy = false;
+                            }
+
+                            return true;
+                        }
+
+                        const commandText = `${qty > 1 ? `${qty} ` : ''}${name}`;
+                        this.cashierBusy = true;
+                        try {
+                            const response = await axios.post(`/api/cashier/orders/${order.id}/append-voice`, {
+                                raw_text: commandText,
+                            });
+
+                            this.cashierMessage = response.data.message || 'Item tambahan berhasil ditambahkan.';
+                            this.cashierTone = 'text-emerald-600';
+                            this.cashierAppendText = '';
+                            await this.fetchCashierOrders();
+                        } catch (error) {
+                            const data = error?.response?.data || {};
+                            this.cashierMessage = data.message || 'Gagal menambah item ke order.';
+                            this.cashierTone = 'text-rose-600';
+                        } finally {
+                            this.cashierBusy = false;
+                        }
+
+                        return true;
                     },
 
                     async confirmOrderSubmit() {
