@@ -264,7 +264,10 @@ class CashierOrderController extends Controller
             'tambah',
         ];
 
-        $text = str_replace($noiseWords, ' ', $text);
+        foreach ($noiseWords as $noiseWord) {
+            $pattern = '/\b'.str_replace('\ ', '\\s+', preg_quote($noiseWord, '/')).'\b/';
+            $text = preg_replace($pattern, ' ', $text) ?? $text;
+        }
 
         return Str::of($text)
             ->replaceMatches('/[^a-z0-9,\s]/', ' ')
@@ -300,6 +303,7 @@ class CashierOrderController extends Controller
             }
 
             $segment = $this->normalizeNumberWords($segment);
+            $segment = $this->normalizePossessiveSuffix($segment);
             foreach ($this->extractItemsFromSegment($segment, $slangMap) as $item) {
                 $items[] = $item;
             }
@@ -430,6 +434,16 @@ class CashierOrderController extends Controller
             ->toString();
     }
 
+    private function normalizePossessiveSuffix(string $text): string
+    {
+        return Str::of($text)
+            // Convert conversational suffix forms like "tehnya" -> "teh".
+            ->replaceMatches('/\b([a-z0-9]{3,})nya\b/', '$1')
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
+    }
+
     private function parseWithFallback(string $normalizedText): array
     {
         if ($normalizedText === '') {
@@ -476,6 +490,7 @@ class CashierOrderController extends Controller
 
         foreach ($parsedItems as $parsedItem) {
             $candidate = Str::of($parsedItem['name'])->lower()->squish()->toString();
+            $candidate = $this->normalizePossessiveSuffix($candidate);
             $qty = max(1, (int) ($parsedItem['qty'] ?? 1));
             $menu = $nameIndex->get($candidate) ?? $aliasIndex->get($candidate);
 

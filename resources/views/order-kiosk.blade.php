@@ -694,7 +694,8 @@
                         const grouped = new Map();
 
                         parts.forEach((part) => {
-                            const extractedItems = this.extractItemsFromSegment(this.normalizeNumberWords(part));
+                            const preparedPart = this.normalizePossessiveSuffix(this.normalizeNumberWords(part));
+                            const extractedItems = this.extractItemsFromSegment(preparedPart);
 
                             extractedItems.forEach((parsed) => {
                                 const canonicalName = lookup.get(parsed.name);
@@ -752,6 +753,13 @@
                             .split(/\s+/)
                             .map((token) => map[token] ?? token)
                             .join(' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                    },
+
+                    normalizePossessiveSuffix(segment) {
+                        return String(segment)
+                            .replace(/\b([a-z0-9]{3,})nya\b/g, '$1')
                             .replace(/\s+/g, ' ')
                             .trim();
                     },
