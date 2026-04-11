@@ -1,0 +1,693 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Menu;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Services\GroqService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Throwable;
+
+class CashierOrderController extends Controller
+{
+    public function __construct(private readonly GroqService $groqService) {}
+
+    public function index(Request $request): JsonResponse
+    {
+        $status = $request->query('status');
+
+        $orders = Order::query()
+            ->with(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status'])
+            ->when(
+                $status,
+                fn ($query) => $query->whereIn('status', explode(',', (string) $status)),
+                fn ($query) => $query->whereIn('status', ['queued', 'waiting', 'processing'])
+            )
+            ->orderByDesc('id')
+            ->get(['id', 'order_code', 'status', 'total_amount', 'created_at']);
+
+        return response()->json([
+            'data' => $orders,
+        ]);
+    }
+
+    public function confirm(Order $order): JsonResponse
+    {
+        if (in_array($order->status, ['cancelled', 'done'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order sudah selesai atau dibatalkan.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($order): void {
+            $order->update([
+                'status' => 'processing',
+            ]);
+
+            if ($order->queue) {
+                $order->queue->update([
+                    'status' => 'processing',
+                    'called_at' => $order->queue->called_at ?? now(),
+                ]);
+            }
+        });
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Order berhasil dikonfirmasi.',
+        ]);
+    }
+
+    public function cancel(Order $order): JsonResponse
+    {
+        if ($order->status === 'done') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order yang sudah selesai tidak bisa dibatalkan.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($order): void {
+            $order->update([
+                'status' => 'cancelled',
+            ]);
+
+            if ($order->queue) {
+                $order->queue->update([
+                    'status' => 'done',
+                    'done_at' => now(),
+                ]);
+            }
+        });
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Order dibatalkan.',
+        ]);
+    }
+
+    public function appendVoice(Request $request, Order $order): JsonResponse
+    {
+        if (in_array($order->status, ['cancelled', 'done'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order ini tidak bisa ditambah lagi.',
+            ], 422);
+        }
+
+        $payload = $request->validate([
+            'raw_text' => ['required', 'string', 'max:500'],
+        ]);
+
+        $rawText = Str::of($payload['raw_text'])->squish()->toString();
+        $normalizedText = $this->normalizeText($rawText);
+
+        $parsed = $this->parseByRules($normalizedText);
+
+        if (empty($parsed['items'])) {
+            $parsed['items'] = $this->parseWithFallback($normalizedText);
+            $parsed['confidence'] = 'fallback';
+        }
+
+        $validated = $this->validateItems($parsed['items']);
+
+        if ($validated['status'] === 'invalid') {
+            return response()->json([
+                'status' => 'invalid',
+                'message' => 'Item tambahan tidak dikenali, silakan ulangi.',
+            ], 422);
+        }
+
+        if ($validated['status'] === 'partial') {
+            return response()->json([
+                'status' => 'partial',
+                'message' => 'Sebagian item tidak tersedia: '.implode(', ', $validated['invalid']),
+                'valid' => $validated['valid_names'],
+                'invalid' => $validated['invalid'],
+            ], 422);
+        }
+
+        DB::transaction(function () use ($order, $rawText, $validated): void {
+            foreach ($validated['valid_items'] as $item) {
+                $unitPrice = (float) $item['menu']->price;
+                $subtotal = $unitPrice * $item['qty'];
+
+                $order->items()->create([
+                    'menu_id' => $item['menu']->id,
+                    'item_name' => $item['menu']->name,
+                    'qty' => $item['qty'],
+                    'unit_price' => $unitPrice,
+                    'subtotal' => $subtotal,
+                ]);
+            }
+
+            $order->update([
+                'raw_text' => trim($order->raw_text.' | + '.$rawText),
+                'total_amount' => (float) $order->items()->sum('subtotal'),
+            ]);
+        });
+
+        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Item tambahan berhasil ditambahkan.',
+            'order' => $order,
+        ]);
+    }
+
+    public function updateItem(Request $request, Order $order, OrderItem $item): JsonResponse
+    {
+        if ($item->order_id !== $order->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Item tidak terdaftar pada order ini.',
+            ], 404);
+        }
+
+        if (in_array($order->status, ['cancelled', 'done'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order ini tidak bisa diubah lagi.',
+            ], 422);
+        }
+
+        $payload = $request->validate([
+            'qty' => ['required', 'integer', 'min:1', 'max:99'],
+        ]);
+
+        DB::transaction(function () use ($order, $item, $payload): void {
+            $qty = (int) $payload['qty'];
+            $unitPrice = (float) ($item->unit_price ?? 0);
+
+            if ($unitPrice <= 0 && (int) $item->qty > 0) {
+                $unitPrice = (float) $item->subtotal / (int) $item->qty;
+            }
+
+            $item->update([
+                'qty' => $qty,
+                'unit_price' => $unitPrice,
+                'subtotal' => $unitPrice * $qty,
+            ]);
+
+            $order->update([
+                'total_amount' => (float) $order->items()->sum('subtotal'),
+            ]);
+        });
+
+        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Qty item berhasil diperbarui.',
+            'order' => $order,
+        ]);
+    }
+
+    public function removeItem(Order $order, OrderItem $item): JsonResponse
+    {
+        if ($item->order_id !== $order->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Item tidak terdaftar pada order ini.',
+            ], 404);
+        }
+
+        if (in_array($order->status, ['cancelled', 'done'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Order ini tidak bisa diubah lagi.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($order, $item): void {
+            $item->delete();
+
+            $order->update([
+                'total_amount' => (float) $order->items()->sum('subtotal'),
+            ]);
+        });
+
+        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Item berhasil dihapus dari order.',
+            'order' => $order,
+        ]);
+    }
+
+    private function normalizeText(string $rawText): string
+    {
+        $text = Str::of($rawText)->lower()->squish()->toString();
+
+        $noiseWords = [
+            'saya mau',
+            'aku mau',
+            'saya pesan',
+            'aku pesan',
+            'mau',
+            'pesan',
+            'tolong',
+            'dong',
+            'ya',
+            'kak',
+            'tambahkan',
+            'tambah',
+        ];
+
+        $text = str_replace($noiseWords, ' ', $text);
+
+        return Str::of($text)
+            ->replaceMatches('/[^a-z0-9,\s]/', ' ')
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
+    }
+
+    private function parseByRules(string $normalizedText): array
+    {
+        if ($normalizedText === '') {
+            return [
+                'items' => [],
+                'confidence' => 'low',
+            ];
+        }
+
+        $slangMap = [
+            'nasgor' => 'nasi goreng',
+            'teh anget' => 'teh',
+            'es teh manis' => 'teh manis dingin',
+        ];
+
+        $segments = preg_split('/\s*(?:,| dan | sama | plus |\+)\s*/', $normalizedText) ?: [];
+
+        $items = [];
+
+        foreach ($segments as $segment) {
+            $segment = trim($segment);
+
+            if ($segment === '') {
+                continue;
+            }
+
+            $segment = $this->normalizeNumberWords($segment);
+            foreach ($this->extractItemsFromSegment($segment, $slangMap) as $item) {
+                $items[] = $item;
+            }
+        }
+
+        return [
+            'items' => $items,
+            'confidence' => empty($items) ? 'low' : 'high',
+        ];
+    }
+
+    private function extractQtyAndName(string $segment): array
+    {
+        $qty = 1;
+        $name = $segment;
+
+        if (preg_match('/^(\d+)\s*(?:x|kali)?\s+(.+)$/', $segment, $match)) {
+            $qty = max(1, (int) $match[1]);
+            $name = trim($match[2]);
+
+            return [
+                'name' => $name,
+                'qty' => $qty,
+            ];
+        }
+
+        if (preg_match('/^(.+?)\s+(?:x\s*)?(\d+)\s*(?:x|kali)?$/', $segment, $match)) {
+            $name = trim($match[1]);
+            $qty = max(1, (int) $match[2]);
+        }
+
+        return [
+            'name' => $name,
+            'qty' => $qty,
+        ];
+    }
+
+    private function extractItemsFromSegment(string $segment, array $slangMap): array
+    {
+        $segment = Str::of($segment)
+            ->replaceMatches('/\bx(\d+)\b/', '$1')
+            ->replaceMatches('/\b(\d+)x\b/', '$1')
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
+
+        $items = [];
+
+        if (preg_match('/^\d+/', $segment)) {
+            preg_match_all('/(\d+)\s*(?:x|kali)?\s+([a-z0-9\s]+?)(?=(?:\s+\d+\s*(?:x|kali)?\s+[a-z]|$))/', $segment, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $name = Str::of($match[2])
+                    ->replaceMatches('/\b(?:x|kali)\b/', ' ')
+                    ->replaceMatches('/\s+/', ' ')
+                    ->trim()
+                    ->toString();
+                $name = $slangMap[$name] ?? $name;
+                if ($name !== '') {
+                    $items[] = [
+                        'name' => $name,
+                        'qty' => max(1, (int) $match[1]),
+                    ];
+                }
+            }
+        } else {
+            preg_match_all('/([a-z0-9\s]+?)\s+(?:x\s*)?(\d+)\s*(?:x|kali)?(?=(?:\s+[a-z][a-z0-9\s]*?\s+(?:x\s*)?\d+\s*(?:x|kali)?|$))/', $segment, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $name = Str::of($match[1])
+                    ->replaceMatches('/\b(?:x|kali)\b/', ' ')
+                    ->replaceMatches('/\s+/', ' ')
+                    ->trim()
+                    ->toString();
+                $name = $slangMap[$name] ?? $name;
+                if ($name !== '') {
+                    $items[] = [
+                        'name' => $name,
+                        'qty' => max(1, (int) $match[2]),
+                    ];
+                }
+            }
+        }
+
+        if (! empty($items)) {
+            return $items;
+        }
+
+        ['name' => $name, 'qty' => $qty] = $this->extractQtyAndName($segment);
+        $name = Str::of($name)
+            ->replaceMatches('/\b(?:x|kali)\b/', ' ')
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
+        $name = $slangMap[$name] ?? $name;
+
+        if ($name === '') {
+            return [];
+        }
+
+        return [[
+            'name' => $name,
+            'qty' => $qty,
+        ]];
+    }
+
+    private function normalizeNumberWords(string $segment): string
+    {
+        $map = [
+            'sepuluh' => '10',
+            'sembilan' => '9',
+            'delapan' => '8',
+            'tujuh' => '7',
+            'enam' => '6',
+            'lima' => '5',
+            'empat' => '4',
+            'tiga' => '3',
+            'dua' => '2',
+            'satu' => '1',
+            'se' => '1',
+        ];
+
+        foreach ($map as $word => $number) {
+            $segment = preg_replace('/\b'.$word.'\b/', $number, $segment) ?? $segment;
+        }
+
+        return Str::of($segment)
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->toString();
+    }
+
+    private function parseWithFallback(string $normalizedText): array
+    {
+        if ($normalizedText === '') {
+            return [];
+        }
+
+        try {
+            return $this->groqService->parseOrderItems($normalizedText);
+        } catch (Throwable $exception) {
+            Log::warning('Groq fallback parse failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    private function validateItems(array $parsedItems): array
+    {
+        if (empty($parsedItems)) {
+            return [
+                'status' => 'invalid',
+                'valid_items' => [],
+                'valid_names' => [],
+                'invalid' => [],
+            ];
+        }
+
+        $menus = Menu::query()
+            ->where('is_active', true)
+            ->with('aliases:id,menu_id,normalized_alias')
+            ->get(['id', 'name', 'price']);
+
+        $nameIndex = $menus->keyBy(fn (Menu $menu) => Str::lower($menu->name));
+        $aliasIndex = $menus
+            ->flatMap(function (Menu $menu): Collection {
+                return $menu->aliases->mapWithKeys(function ($alias) use ($menu): array {
+                    return [Str::lower($alias->normalized_alias) => $menu];
+                });
+            });
+
+        $validatedItems = [];
+        $invalidItems = [];
+
+        foreach ($parsedItems as $parsedItem) {
+            $candidate = Str::of($parsedItem['name'])->lower()->squish()->toString();
+            $qty = max(1, (int) ($parsedItem['qty'] ?? 1));
+            $menu = $nameIndex->get($candidate) ?? $aliasIndex->get($candidate);
+
+            if (! $menu) {
+                $compositeItems = $this->resolveCompositeMenuCandidate($candidate, $nameIndex, $aliasIndex);
+                if (! empty($compositeItems)) {
+                    foreach ($compositeItems as $compositeItem) {
+                        $validatedItems[] = [
+                            'menu' => $compositeItem['menu'],
+                            'qty' => $qty * $compositeItem['qty'],
+                        ];
+                    }
+
+                    continue;
+                }
+            }
+
+            if (! $menu) {
+                $repeated = $this->resolveRepeatedMenuCandidate($candidate, $nameIndex, $aliasIndex);
+                if ($repeated) {
+                    $menu = $repeated['menu'];
+                    $qty *= $repeated['repeat'];
+                }
+            }
+
+            if (! $menu) {
+                $menu = $this->findByFuzzyMatch($candidate, $menus);
+            }
+
+            if (! $menu) {
+                $invalidItems[] = $parsedItem['name'];
+                continue;
+            }
+
+            $validatedItems[] = [
+                'menu' => $menu,
+                'qty' => $qty,
+            ];
+        }
+
+        $grouped = collect($validatedItems)
+            ->groupBy(fn (array $item) => $item['menu']->id)
+            ->map(function (Collection $group): array {
+                $menu = $group->first()['menu'];
+
+                return [
+                    'menu' => $menu,
+                    'qty' => $group->sum('qty'),
+                ];
+            })
+            ->values()
+            ->all();
+
+        if (empty($grouped)) {
+            return [
+                'status' => 'invalid',
+                'valid_items' => [],
+                'valid_names' => [],
+                'invalid' => $invalidItems,
+            ];
+        }
+
+        if (! empty($invalidItems)) {
+            return [
+                'status' => 'partial',
+                'valid_items' => $grouped,
+                'valid_names' => collect($grouped)->map(fn (array $item) => $item['menu']->name)->values()->all(),
+                'invalid' => $invalidItems,
+            ];
+        }
+
+        return [
+            'status' => 'valid',
+            'valid_items' => $grouped,
+            'valid_names' => collect($grouped)->map(fn (array $item) => $item['menu']->name)->values()->all(),
+            'invalid' => [],
+        ];
+    }
+
+    private function resolveRepeatedMenuCandidate(string $candidate, Collection $nameIndex, Collection $aliasIndex): ?array
+    {
+        $keys = $nameIndex->keys()
+            ->merge($aliasIndex->keys())
+            ->unique()
+            ->sortByDesc(fn (string $value) => strlen($value))
+            ->values();
+
+        foreach ($keys as $key) {
+            $quoted = preg_quote($key, '/');
+            $pattern = '/^(?:'.$quoted.')(?:\s+'.$quoted.')+$/';
+
+            if (! preg_match($pattern, $candidate)) {
+                continue;
+            }
+
+            preg_match_all('/'.$quoted.'/', $candidate, $matches);
+            $repeat = count($matches[0]);
+
+            if ($repeat < 2) {
+                continue;
+            }
+
+            $menu = $nameIndex->get($key) ?? $aliasIndex->get($key);
+            if (! $menu) {
+                continue;
+            }
+
+            return [
+                'menu' => $menu,
+                'repeat' => $repeat,
+            ];
+        }
+
+        return null;
+    }
+
+    private function resolveCompositeMenuCandidate(string $candidate, Collection $nameIndex, Collection $aliasIndex): array
+    {
+        $tokens = array_values(array_filter(explode(' ', $candidate), fn (string $value) => $value !== ''));
+        if (count($tokens) < 2) {
+            return [];
+        }
+
+        $phraseMap = collect([])
+            ->merge($nameIndex)
+            ->merge($aliasIndex)
+            ->filter(fn ($menu, $phrase) => is_string($phrase) && $phrase !== '')
+            ->mapWithKeys(fn ($menu, $phrase) => [Str::lower($phrase) => $menu]);
+
+        if ($phraseMap->isEmpty()) {
+            return [];
+        }
+
+        $phrases = $phraseMap
+            ->map(fn ($menu, $phrase) => [
+                'phrase' => $phrase,
+                'phrase_tokens' => explode(' ', $phrase),
+                'menu' => $menu,
+            ])
+            ->values()
+            ->sortByDesc(fn (array $item) => count($item['phrase_tokens']) * 1000 + strlen($item['phrase']))
+            ->values();
+
+        $cursor = 0;
+        $matches = [];
+
+        while ($cursor < count($tokens)) {
+            $matched = null;
+
+            foreach ($phrases as $phraseItem) {
+                $length = count($phraseItem['phrase_tokens']);
+                if ($cursor + $length > count($tokens)) {
+                    continue;
+                }
+
+                $slice = array_slice($tokens, $cursor, $length);
+                if (implode(' ', $slice) === $phraseItem['phrase']) {
+                    $matched = $phraseItem;
+                    break;
+                }
+            }
+
+            if (! $matched) {
+                // Skip unknown token so valid menu phrases can still be extracted.
+                $cursor++;
+                continue;
+            }
+
+            $matches[] = $matched['menu'];
+            $cursor += count($matched['phrase_tokens']);
+        }
+
+        if (empty($matches)) {
+            return [];
+        }
+
+        return collect($matches)
+            ->groupBy(fn (Menu $menu) => $menu->id)
+            ->map(function (Collection $group): array {
+                return [
+                    'menu' => $group->first(),
+                    'qty' => $group->count(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function findByFuzzyMatch(string $candidate, Collection $menus): ?Menu
+    {
+        $threshold = 80;
+        $bestScore = 0;
+        $bestMenu = null;
+
+        foreach ($menus as $menu) {
+            similar_text($candidate, Str::lower($menu->name), $nameScore);
+
+            if ($nameScore > $bestScore) {
+                $bestScore = $nameScore;
+                $bestMenu = $menu;
+            }
+
+            foreach ($menu->aliases as $alias) {
+                similar_text($candidate, Str::lower($alias->normalized_alias), $aliasScore);
+
+                if ($aliasScore > $bestScore) {
+                    $bestScore = $aliasScore;
+                    $bestMenu = $menu;
+                }
+            }
+        }
+
+        return $bestScore >= $threshold ? $bestMenu : null;
+    }
+}
