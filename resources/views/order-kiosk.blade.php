@@ -103,144 +103,269 @@
                 </div>
             </section>
 
+            <!-- Order Success Modal -->
+            <div x-show="showSuccessModal" 
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 @click="closeSuccessModal()"
+                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+                     @click.stop
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95">
+                    
+                    <div class="grid grid-cols-3 gap-5">
+                        <!-- LEFT: Queue Number - PRIMARY -->
+                        <div class="flex flex-col items-center justify-center rounded-xl border-2 border-cyan-400 bg-gradient-to-br from-cyan-50 to-blue-50 p-4">
+                            <p class="text-xs font-bold uppercase tracking-wider text-slate-600">Nomor Antrian</p>
+                            <p class="mt-2 text-5xl font-black tracking-wider text-cyan-600 queue-pop" x-text="queueNumber ?? '-'" :key="queueNumber"></p>
+                        </div>
+
+                        <!-- MIDDLE: Customer & Order Info -->
+                        <div class="space-y-2">
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-bold uppercase text-slate-600">Nama</p>
+                                <p class="text-sm font-semibold text-slate-900" x-text="lastOrderCustomerName || '-'"></p>
+                            </div>
+
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-bold uppercase text-slate-600">Order ID</p>
+                                <p class="font-mono text-xs font-bold text-slate-900" x-text="orderCode || '-'"></p>
+                            </div>
+
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p class="text-xs font-bold uppercase text-slate-600">Items</p>
+                                <ul class="mt-1 space-y-0.5 text-xs text-slate-700">
+                                    <template x-if="finalItems.length === 0">
+                                        <li class="text-slate-500">-</li>
+                                    </template>
+                                    <template x-for="item in finalItems" :key="item.name + item.qty">
+                                        <li>
+                                            <span x-text="item.name"></span>
+                                            <span class="font-semibold" x-text="`×${item.qty}`"></span>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: Status & Actions -->
+                        <div class="flex flex-col justify-between">
+                            <div class="flex items-center justify-center gap-2 rounded-lg bg-emerald-50 p-3">
+                                <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-bold text-emerald-900">Berhasil!</p>
+                                    <p class="text-xs text-emerald-700">Tunggu giliran Anda</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button type="button" @click="printSuccessModal('pdf')" class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2m0 0v-8m0 8H3m15-8h3" />
+                                        </svg>
+                                        <span>PDF</span>
+                                    </button>
+                                    <button type="button" @click="printSuccessModal('thermal')" class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z" />
+                                        </svg>
+                                        <span>Thermal</span>
+                                    </button>
+                                </div>
+                                <button type="button" @click="closeSuccessModal()" class="w-full rounded-lg bg-slate-900 px-2 py-2 text-xs font-bold text-white hover:bg-slate-800 transition">
+                                    Lanjut Order
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Layout: Menu (Left - Dominant) + Voice Input (Right - Compact) -->
             <section class="kiosk-grid rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:p-7">
                 <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
-                    <aside class="lg:col-span-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <h3 class="text-base font-bold text-slate-900">Daftar Menu</h3>
-                        <p class="mt-1 text-xs text-slate-500">Menu aktif dari API</p>
-
-                        <div class="mt-4 max-h-[460px] space-y-2 overflow-auto pr-1">
+                    
+                    <!-- MENU GRID - DOMINANT (Left, 7-8 cols) -->
+                    <aside class="lg:col-span-7 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-900">📋 Daftar Menu</h3>
+                                <p class="mt-1 text-xs text-slate-500">Pilih dari menu yang tersedia</p>
+                            </div>
                             <template x-if="loadingMenus">
-                                <p class="text-sm text-slate-500">Memuat menu...</p>
+                                <div class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-sky-600"></div>
                             </template>
+                        </div>
 
-                            <template x-if="!loadingMenus && menus.length === 0">
-                                <p class="rounded-lg bg-white p-3 text-sm text-slate-600">Menu belum tersedia. Tambahkan data menu dulu.</p>
+                        <!-- Category Filter Pills -->
+                        <div class="mt-4 flex gap-2 overflow-auto pb-2 pr-2">
+                            <button @click="selectCategory(null)"
+                                class="inline-flex flex-shrink-0 items-center rounded-full px-4 py-2 text-xs font-semibold transition"
+                                :class="selectedCategoryId === null 
+                                    ? 'bg-sky-600 text-white' 
+                                    : 'border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'">
+                                Semua
+                            </button>
+                            <template x-for="category in categories" :key="category.id">
+                                <button @click="selectCategory(category.id)"
+                                    class="inline-flex flex-shrink-0 items-center rounded-full px-4 py-2 text-xs font-semibold transition"
+                                    :class="selectedCategoryId === category.id 
+                                        ? 'bg-sky-600 text-white' 
+                                        : 'border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'"
+                                    x-text="category.name">
+                                </button>
                             </template>
+                        </div>
 
-                            <template x-for="menu in menus" :key="menu.id">
-                                <div class="rounded-xl border p-3 transition"
-                                    :class="isMenuHighlighted(menu.name) ? 'border-cyan-400 bg-cyan-50 shadow-sm' : 'border-slate-200 bg-white'">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <p class="font-semibold text-slate-800" x-text="menu.name"></p>
-                                        <span class="text-xs font-bold text-sky-700" x-text="formatCurrency(menu.price)"></span>
-                                    </div>
+                        <div class="mt-4 max-h-[500px] space-y-0 overflow-auto pr-2">
+                            <template x-if="!loadingMenus && filteredMenus().length === 0">
+                                <div class="rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 text-center">
+                                    <p class="text-sm font-semibold text-slate-600" x-show="menus.length === 0">Menu belum tersedia</p>
+                                    <p class="text-sm font-semibold text-slate-600" x-show="menus.length > 0">Tidak ada menu di kategori ini</p>
+                                    <p class="mt-1 text-xs text-slate-500" x-show="menus.length === 0">Tambahkan data menu terlebih dahulu</p>
                                 </div>
                             </template>
+
+                            <!-- Grid Menu Cards: 3-4 per row -->
+                            <div class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
+                                <template x-for="menu in filteredMenus()" :key="menu.id">
+                                    <div class="group cursor-pointer overflow-hidden rounded-xl border-2 p-0 transition-all"
+                                        :class="isMenuHighlighted(menu.name) 
+                                            ? 'border-cyan-400 bg-cyan-50 shadow-md' 
+                                            : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'">
+                                        
+                                        <!-- Image Container -->
+                                        <div class="relative overflow-hidden rounded-t-lg bg-slate-100">
+                                            <img x-show="menu.image_url" 
+                                                 :src="menu.image_url" 
+                                                 alt="Gambar menu" 
+                                                 class="h-32 w-full object-cover transition-transform group-hover:scale-105" 
+                                                 loading="lazy">
+                                            <div x-show="!menu.image_url" class="flex h-32 items-center justify-center bg-gradient-to-br from-slate-200 to-slate-300">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                            </div>
+                                            
+                                            <!-- Highlight Badge -->
+                                            <template x-if="isMenuHighlighted(menu.name)">
+                                                <div class="absolute right-2 top-2 rounded-full bg-cyan-400 px-2 py-1">
+                                                    <p class="text-xs font-bold text-white">✓</p>
+                                                </div>
+                                            </template>
+                                        </div>
+
+                                        <!-- Info -->
+                                        <div class="space-y-1.5 p-3">
+                                            <p class="text-xl font-bold leading-tight text-slate-900" x-text="menu.name"></p>
+                                            <template x-if="menu.category && menu.category.id">
+                                                <div>
+                                                    <span class="inline-flex max-w-full items-center truncate rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700" x-text="menu.category.name"></span>
+                                                </div>
+                                            </template>
+                                            <p class="text-xs leading-snug text-slate-600" x-text="menu.description || 'Menu pilihan hari ini'"></p>
+                                            <p class="pt-0.5 text-sm font-bold text-sky-700" x-text="formatCurrency(menu.price)"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
                     </aside>
 
-                    <main class="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-4">
-                        <h3 class="text-base font-bold text-slate-900">Voice Input</h3>
-                        <p class="mt-1 text-xs text-slate-500">Klik mic, bicara, lalu submit order.</p>
+                    <!-- VOICE INPUT - COMPACT (Right, 4-5 cols) -->
+                    <main class="lg:col-span-5 flex flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5">
+                        <h3 class="text-lg font-bold text-slate-900">🎤 Voice Order</h3>
+                        <p class="mt-1 text-xs text-slate-500">Bicara pesanan atau ketik manual</p>
 
-                        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <!-- Customer Info - Compact -->
+                        <div class="mt-4 space-y-3">
                             <div>
-                                <label for="customer_name" class="text-xs font-semibold text-slate-600">Nama Pelanggan</label>
-                                <input id="customer_name" x-model="customerName" type="text" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500" placeholder="Masukkan nama pelanggan">
+                                <label for="customer_name_kiosk" class="text-xs font-bold uppercase text-slate-600">Nama</label>
+                                <input id="customer_name_kiosk" x-model="customerName" type="text" placeholder="Nama Anda" class="mt-1 w-full rounded-lg border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
                             </div>
                             <div>
-                                <label for="customer_gender" class="text-xs font-semibold text-slate-600">Jenis Kelamin (opsional)</label>
-                                <select id="customer_gender" x-model="customerGender" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
-                                    <option value="">- Tidak diisi -</option>
-                                    <option value="male">Laki-laki</option>
-                                    <option value="female">Perempuan</option>
+                                <label for="customer_gender_kiosk" class="text-xs font-bold uppercase text-slate-600">Gender</label>
+                                <select id="customer_gender_kiosk" x-model="customerGender" class="mt-1 w-full rounded-lg border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
+                                    <option value="">-</option>
+                                    <option value="male">Pria</option>
+                                    <option value="female">Wanita</option>
                                     <option value="other">Lainnya</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div class="mt-5 flex flex-wrap items-center gap-4">
+                        <!-- Voice Controls - Compact -->
+                        <div class="mt-4 flex items-end gap-2">
                             <button type="button"
                                 @click="toggleListening('customer')"
                                 :disabled="!speechSupported"
-                                class="relative inline-flex h-14 w-14 items-center justify-center rounded-full text-white transition"
-                                :class="isListening ? 'bg-rose-500' : 'bg-sky-600 hover:bg-sky-700'">
-                                <span x-show="isListening" class="absolute inset-0 rounded-full border-2 border-rose-300 pulse-ring"></span>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 18v3m0 0h3m-3 0H9m8-9a5 5 0 00-10 0v2a5 5 0 0010 0v-2z" />
+                                class="relative inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-white transition"
+                                :class="isListening ? 'bg-rose-500 hover:bg-rose-600' : 'bg-sky-600 hover:bg-sky-700'">
+                                <span x-show="isListening" class="absolute inset-0 rounded-lg border-2 border-rose-300 pulse-ring"></span>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 16.91c-1.48 1.46-3.51 2.36-5.77 2.36-2.26 0-4.29-.9-5.77-2.36l-1.1 1.1c1.72 1.64 4.05 2.67 6.87 2.67s5.15-1.03 6.87-2.67l-1.1-1.1zM19 28h-2v-2h2v2z"/>
                                 </svg>
                             </button>
-
                             <button type="button"
                                 @click="toggleListening('customer')"
                                 :disabled="!speechSupported"
-                                class="rounded-xl px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                                class="flex-1 rounded-lg px-3 py-2 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
                                 :class="isListening ? 'bg-rose-500 hover:bg-rose-600' : 'bg-sky-600 hover:bg-sky-700'"
-                                x-text="isListening ? 'Stop Input Suara' : 'Mulai Input Suara'">
+                                x-text="isListening ? 'Stop' : 'Mulai'">
                             </button>
-
-                            <div>
-                                <p class="text-sm font-semibold" x-text="isListening ? 'Mendengarkan...' : 'Siap menerima suara'"></p>
-                                <p class="text-xs text-slate-500" x-show="speechSupported">Gunakan Chrome/Edge terbaru untuk hasil terbaik.</p>
-                                <p class="text-xs text-rose-500" x-show="!speechSupported">Browser tidak mendukung Web Speech API. Pakai input manual di textarea.</p>
-                            </div>
                         </div>
 
-                        <div class="mt-4">
-                            <label for="raw_text" class="text-xs font-semibold text-slate-600">Transkrip / Input Manual</label>
-                            <textarea id="raw_text" x-model="rawText" @input="scheduleDraftPreview()" rows="3" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: saya mau nasgor sama teh anget"></textarea>
+                        <p class="mt-2 text-xs" :class="isListening ? 'text-rose-600 font-semibold' : 'text-slate-500'">
+                            <span x-text="isListening ? '🔴 Mendengarkan...' : (speechSupported ? '✓ Siap' : '✗ Browser tidak support')"></span>
+                        </p>
+
+                        <!-- Transcript / Manual Input -->
+                        <div class="mt-3 flex-1">
+                            <label for="raw_text_kiosk" class="text-xs font-bold uppercase text-slate-600">Pesanan</label>
+                            <textarea id="raw_text_kiosk" x-model="rawText" @input="scheduleDraftPreview()" rows="2" class="mt-1 w-full flex-1 rounded-lg border-slate-300 text-xs focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: nasgor, teh anget"></textarea>
                         </div>
 
-                        <div class="mt-4">
-                            <p class="text-xs font-semibold text-slate-600">Makanan terpilih (berdasarkan kata user)</p>
-                            <div class="mt-2 flex min-h-[44px] flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                        <!-- Detected Items -->
+                        <div class="mt-3">
+                            <p class="text-xs font-bold uppercase text-slate-600">Item Terdeteksi</p>
+                            <div class="mt-1 flex min-h-[28px] flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-2">
                                 <template x-if="detectedItems.length === 0">
-                                    <span class="text-xs text-slate-400">Belum ada item terdeteksi</span>
+                                    <span class="text-xs text-slate-400">Belum ada</span>
                                 </template>
                                 <template x-for="item in detectedItems" :key="item.name + item.qty">
-                                    <span class="chip-in rounded-full bg-cyan-100 px-3 py-1 text-xs font-semibold text-cyan-800" x-text="item.qty > 1 ? `${item.name} x${item.qty}` : item.name"></span>
+                                    <span class="chip-in rounded-full bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800" x-text="item.qty > 1 ? `${item.name} ×${item.qty}` : item.name"></span>
                                 </template>
                             </div>
                         </div>
 
-                        <div class="mt-4 flex flex-wrap gap-2">
-                            <button type="button" @click="submitOrder()" :disabled="submitting || !rawText.trim() || !customerName.trim()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                                <span x-text="submitting ? 'Memproses...' : 'Proses Order'"></span>
+                        <!-- Buttons -->
+                        <div class="mt-3 flex gap-2">
+                            <button type="button" @click="submitOrder()" :disabled="submitting || !rawText.trim() || !customerName.trim()" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-50 hover:bg-slate-800 transition">
+                                <span x-text="submitting ? '...' : 'Proses'"></span>
                             </button>
-                            <button type="button" @click="resetState()" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Reset</button>
+                            <button type="button" @click="resetState()" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">Reset</button>
                         </div>
 
-                        <div class="mt-5 min-h-[92px] rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold text-slate-600">Status</p>
-                            <p class="mt-1 text-sm" :class="statusTone" x-text="statusMessage || 'Belum ada proses.'"></p>
+                        <!-- Status -->
+                        <div class="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+                            <p class="text-xs" :class="statusTone" x-text="statusMessage || 'Siap menerima pesanan'"></p>
                         </div>
-
                     </main>
 
-                    <aside class="lg:col-span-3 rounded-2xl border border-slate-200 bg-slate-900 p-4 text-white">
-                        <h3 class="text-base font-bold">Antrian</h3>
-                        <p class="mt-1 text-xs text-slate-300">Update dari response backend</p>
-
-                        <div class="mt-4 rounded-xl bg-white/10 p-4">
-                            <p class="text-xs text-slate-300">Nama Pelanggan</p>
-                            <p class="mt-1 text-sm font-semibold" x-text="lastOrderCustomerName || '-'" ></p>
-                            <p class="mt-2 text-xs text-slate-300">Jenis Kelamin</p>
-                            <p class="mt-1 text-sm font-semibold" x-text="genderLabel(lastOrderCustomerGender)"></p>
-                        </div>
-
-                        <div class="mt-4 rounded-xl bg-white/10 p-4">
-                            <p class="text-xs text-slate-300">Nomor Antrian</p>
-                            <p class="mt-1 text-4xl font-black tracking-wide queue-pop" x-text="queueNumber ?? '-'" :key="queueNumber"></p>
-                        </div>
-
-                        <div class="mt-4 rounded-xl bg-white/10 p-4">
-                            <p class="text-xs text-slate-300">Order ID / Code</p>
-                            <p class="mt-2 text-sm font-semibold" x-text="orderCode || '-'"></p>
-                        </div>
-
-                        <div class="mt-4 rounded-xl bg-white/10 p-4">
-                            <p class="text-xs text-slate-300">Ringkasan Pesanan</p>
-                            <ul class="mt-2 space-y-1 text-sm">
-                                <template x-if="finalItems.length === 0">
-                                    <li class="text-slate-400">Belum ada order valid.</li>
-                                </template>
-                                <template x-for="item in finalItems" :key="item.name + item.qty">
-                                    <li x-text="item.qty > 1 ? `${item.name} x${item.qty}` : item.name"></li>
-                                </template>
-                            </ul>
-                        </div>
-                    </aside>
                 </div>
             </section>
 
@@ -250,6 +375,8 @@
             function orderKiosk() {
                 return {
                     menus: [],
+                    categories: [],
+                    selectedCategoryId: null,
                     loadingMenus: false,
                     submitting: false,
                     rawText: '',
@@ -284,6 +411,7 @@
                     activeBanner: '',
                     bannerTimer: null,
                     showConfirmModal: false,
+                    showSuccessModal: false,
                     confirmingItems: [],
                     escapeKeyListener: null,
                     silenceTimeoutId: null,
@@ -294,6 +422,7 @@
                     speechInterimCurrent: '',
 
                     init() {
+                        this.fetchCategories();
                         this.fetchMenus();
                         this.initSpeech();
                         this.rotateBanner();
@@ -319,6 +448,26 @@
                         } finally {
                             this.loadingMenus = false;
                         }
+                    },
+
+                    async fetchCategories() {
+                        try {
+                            const response = await axios.get('/api/categories');
+                            this.categories = response.data.data || [];
+                        } catch (error) {
+                            console.error('Gagal memuat kategori:', error);
+                        }
+                    },
+
+                    filteredMenus() {
+                        if (this.selectedCategoryId === null) {
+                            return this.menus;
+                        }
+                        return this.menus.filter(menu => menu.category_id === this.selectedCategoryId);
+                    },
+
+                    selectCategory(categoryId) {
+                        this.selectedCategoryId = categoryId === this.selectedCategoryId ? null : categoryId;
                     },
 
                     initSpeech() {
@@ -857,6 +1006,208 @@
                         document.body.style.overflow = 'auto';
                     },
 
+                    closeSuccessModal() {
+                        this.showSuccessModal = false;
+                        document.body.style.overflow = 'auto';
+                        this.clearDraftState();
+                    },
+
+                    async printSuccessModal(type = 'pdf') {
+                        const receiptContent = this.generateReceiptHTML();
+
+                        if (type === 'pdf') {
+                            // Browser print untuk PDF
+                            const printWindow = window.open('', '_blank');
+                            printWindow.document.write(receiptContent);
+                            printWindow.document.close();
+                            printWindow.print();
+                        } else if (type === 'thermal') {
+                            // Kirim ke backend untuk printer thermal
+                            try {
+                                await axios.post('/api/orders/print-thermal', {
+                                    order_code: this.orderCode,
+                                    queue_number: this.queueNumber,
+                                    customer_name: this.lastOrderCustomerName,
+                                    gender: this.lastOrderCustomerGender,
+                                    items: this.finalItems,
+                                });
+                                this.statusMessage = 'Dikirim ke printer thermal.';
+                                this.statusTone = 'text-emerald-600';
+                            } catch (error) {
+                                this.statusMessage = 'Gagal cetak ke thermal printer.';
+                                this.statusTone = 'text-rose-600';
+                            }
+                        }
+                    },
+
+                    generateReceiptHTML() {
+                        const itemsHTML = this.finalItems.map((item) => `
+                            <tr>
+                                <td style="padding: 8px; text-align: left;">${item.name}</td>
+                                <td style="padding: 8px; text-align: right;">x${item.qty}</td>
+                            </tr>
+                        `).join('');
+
+                        const now = new Date();
+                        const dateTime = now.toLocaleString('id-ID');
+
+                        return `
+                            <!DOCTYPE html>
+                            <html lang="id">
+                            <head>
+                                <meta charset="UTF-8">
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                <title>Struk Pesanan #${this.orderCode}</title>
+                                <style>
+                                    body {
+                                        font-family: Arial, sans-serif;
+                                        margin: 0;
+                                        padding: 20px;
+                                        background-color: #f5f5f5;
+                                    }
+                                    .receipt {
+                                        max-width: 400px;
+                                        background: white;
+                                        margin: 0 auto;
+                                        padding: 20px;
+                                        border: 1px solid #ddd;
+                                        border-radius: 8px;
+                                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                                    }
+                                    .header {
+                                        text-align: center;
+                                        border-bottom: 2px solid #333;
+                                        padding-bottom: 15px;
+                                        margin-bottom: 15px;
+                                    }
+                                    .header h1 {
+                                        margin: 0;
+                                        font-size: 24px;
+                                        color: #333;
+                                    }
+                                    .header p {
+                                        margin: 5px 0 0 0;
+                                        color: #666;
+                                        font-size: 12px;
+                                    }
+                                    .info {
+                                        margin-bottom: 15px;
+                                        font-size: 14px;
+                                    }
+                                    .info-row {
+                                        display: flex;
+                                        justify-content: space-between;
+                                        margin: 5px 0;
+                                    }
+                                    .label {
+                                        font-weight: bold;
+                                        color: #333;
+                                    }
+                                    .value {
+                                        color: #666;
+                                    }
+                                    .queue-number {
+                                        text-align: center;
+                                        background: linear-gradient(135deg, #0ea5e9, #0284c7);
+                                        color: white;
+                                        padding: 20px;
+                                        border-radius: 8px;
+                                        margin: 15px 0;
+                                    }
+                                    .queue-number .label {
+                                        color: rgba(255,255,255,0.8);
+                                        font-weight: normal;
+                                        font-size: 12px;
+                                        display: block;
+                                        margin-bottom: 5px;
+                                    }
+                                    .queue-number .number {
+                                        font-size: 48px;
+                                        font-weight: bold;
+                                        color: white;
+                                    }
+                                    .items {
+                                        border-top: 1px solid #ddd;
+                                        border-bottom: 1px solid #ddd;
+                                        padding: 15px 0;
+                                        margin: 15px 0;
+                                    }
+                                    .items table {
+                                        width: 100%;
+                                        font-size: 14px;
+                                    }
+                                    .items td {
+                                        padding: 8px;
+                                    }
+                                    .footer {
+                                        text-align: center;
+                                        color: #666;
+                                        font-size: 12px;
+                                        margin-top: 15px;
+                                    }
+                                    @media print {
+                                        body {
+                                            background: white;
+                                            padding: 0;
+                                        }
+                                        .receipt {
+                                            box-shadow: none;
+                                            border: none;
+                                        }
+                                    }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="receipt">
+                                    <div class="header">
+                                        <h1>STRUK PESANAN</h1>
+                                        <p>Order #${this.orderCode}</p>
+                                    </div>
+
+                                    <div class="info">
+                                        <div class="info-row">
+                                            <span class="label">Nama:</span>
+                                            <span class="value">${this.lastOrderCustomerName}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="label">Gender:</span>
+                                            <span class="value">${this.genderLabel(this.lastOrderCustomerGender)}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="label">Tanggal:</span>
+                                            <span class="value">${new Date().toLocaleString('id-ID')}</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="queue-number">
+                                        <span class="label">NOMOR ANTRIAN</span>
+                                        <span class="number">${this.queueNumber ?? '-'}</span>
+                                    </div>
+
+                                    <div class="items">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Menu</th>
+                                                    <th style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">Qty</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${itemsHTML}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="footer">
+                                        <p>Terima kasih telah memesan!</p>
+                                        <p>Tunggu antrian sesuai nomor di atas</p>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                        `;
+                    },
+
                     changeConfirmingItemQty(name, delta) {
                         this.updateConfirmingItemQty(name, delta);
                     },
@@ -1153,7 +1504,10 @@
                             this.statusMessage = data.message || 'Order berhasil dibuat.';
                             this.statusTone = 'text-emerald-600';
                             this.closeConfirmModal();
-                            this.clearDraftState();
+                            this.showSuccessModal = true;
+                            this.$nextTick(() => {
+                                document.body.style.overflow = 'hidden';
+                            });
                         } catch (error) {
                             const data = error?.response?.data || {};
 

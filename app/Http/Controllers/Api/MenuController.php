@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -22,12 +23,12 @@ class MenuController extends Controller
     {
         $menus = Menu::query()
             ->where('is_active', true)
-            ->with('aliases:id,menu_id,alias,normalized_alias')
+            ->with('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug')
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'price']);
+            ->get(['id', 'name', 'slug', 'description', 'image_path', 'image_url', 'price', 'category_id']);
 
         return response()->json([
-            'data' => $menus,
+            'data' => $menus->map(fn (Menu $menu): array => $this->serializeMenu($menu))->values(),
         ]);
     }
 
@@ -49,9 +50,9 @@ class MenuController extends Controller
 
         $menus = Menu::query()
             ->where('is_active', true)
-            ->with('aliases:id,menu_id,alias,normalized_alias')
+            ->with('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug')
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'price']);
+            ->get(['id', 'name', 'slug', 'description', 'image_path', 'image_url', 'price', 'category_id']);
 
         $resolved = $this->resolveMenuCandidate($candidate, $menus);
 
@@ -68,12 +69,7 @@ class MenuController extends Controller
             'data' => [
                 'matched_name' => $resolved['menu']->name,
                 'source' => $resolved['source'],
-                'menu' => [
-                    'id' => $resolved['menu']->id,
-                    'name' => $resolved['menu']->name,
-                    'slug' => $resolved['menu']->slug,
-                    'price' => $resolved['menu']->price,
-                ],
+                'menu' => $this->serializeMenu($resolved['menu']),
             ],
         ]);
     }
@@ -81,12 +77,12 @@ class MenuController extends Controller
     public function adminIndex(): JsonResponse
     {
         $menus = Menu::query()
-            ->with('aliases:id,menu_id,alias,normalized_alias')
+            ->with('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug')
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'price', 'is_active', 'created_at', 'updated_at']);
+            ->get(['id', 'name', 'slug', 'description', 'image_path', 'image_url', 'price', 'is_active', 'category_id', 'created_at', 'updated_at']);
 
         return response()->json([
-            'data' => $menus,
+            'data' => $menus->map(fn (Menu $menu): array => $this->serializeMenu($menu, true))->values(),
         ]);
     }
 
@@ -94,6 +90,10 @@ class MenuController extends Controller
     {
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:120', 'unique:menus,name'],
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'url', 'max:2048'],
+            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
             'price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             'aliases' => ['nullable', 'array'],
@@ -101,22 +101,29 @@ class MenuController extends Controller
         ]);
 
         $name = Str::of($payload['name'])->squish()->toString();
+        $storedImagePath = $request->hasFile('image_file')
+            ? $request->file('image_file')->store('menus', 'public')
+            : null;
 
         $menu = Menu::query()->create([
             'name' => $name,
             'slug' => $this->buildUniqueSlug($name),
+            'category_id' => $payload['category_id'],
+            'description' => Str::of((string) ($payload['description'] ?? ''))->squish()->toString() ?: null,
+            'image_path' => $storedImagePath,
+            'image_url' => $storedImagePath ? null : ($payload['image_url'] ?? null),
             'price' => $payload['price'],
             'is_active' => (bool) ($payload['is_active'] ?? true),
         ]);
 
         $this->syncAliases($menu, $payload['aliases'] ?? []);
 
-        $menu->load('aliases:id,menu_id,alias,normalized_alias');
+        $menu->load('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug');
 
         return response()->json([
             'status' => 'ok',
             'message' => 'Menu berhasil ditambahkan.',
-            'data' => $menu,
+            'data' => $this->serializeMenu($menu, true),
         ], 201);
     }
 
@@ -124,6 +131,11 @@ class MenuController extends Controller
     {
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:120', Rule::unique('menus', 'name')->ignore($menu->id)],
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'url', 'max:2048'],
+            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
+            'remove_image' => ['nullable', 'boolean'],
             'price' => ['required', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             'aliases' => ['nullable', 'array'],
@@ -131,10 +143,35 @@ class MenuController extends Controller
         ]);
 
         $name = Str::of($payload['name'])->squish()->toString();
+        $removeImage = (bool) ($payload['remove_image'] ?? false);
+
+        if ($removeImage && $menu->image_path) {
+            Storage::disk('public')->delete($menu->image_path);
+            $menu->image_path = null;
+            $menu->image_url = null;
+        }
+
+        if ($request->hasFile('image_file')) {
+            if ($menu->image_path) {
+                Storage::disk('public')->delete($menu->image_path);
+            }
+
+            $menu->image_path = $request->file('image_file')->store('menus', 'public');
+            $menu->image_url = null;
+        } elseif (array_key_exists('image_url', $payload)) {
+            $menu->image_url = $payload['image_url'];
+            if ($payload['image_url']) {
+                $menu->image_path = null;
+            }
+        }
 
         $menu->update([
             'name' => $name,
             'slug' => $menu->name === $name ? $menu->slug : $this->buildUniqueSlug($name, $menu->id),
+            'category_id' => $payload['category_id'],
+            'description' => Str::of((string) ($payload['description'] ?? ''))->squish()->toString() ?: null,
+            'image_path' => $menu->image_path,
+            'image_url' => $menu->image_url,
             'price' => $payload['price'],
             'is_active' => (bool) ($payload['is_active'] ?? $menu->is_active),
         ]);
@@ -143,12 +180,12 @@ class MenuController extends Controller
             $this->syncAliases($menu, $payload['aliases'] ?? []);
         }
 
-        $menu->load('aliases:id,menu_id,alias,normalized_alias');
+        $menu->load('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug');
 
         return response()->json([
             'status' => 'ok',
             'message' => 'Menu berhasil diperbarui.',
-            'data' => $menu,
+            'data' => $this->serializeMenu($menu, true),
         ]);
     }
 
@@ -168,8 +205,32 @@ class MenuController extends Controller
         ]);
     }
 
+    public function removeImage(Menu $menu): JsonResponse
+    {
+        if ($menu->image_path) {
+            Storage::disk('public')->delete($menu->image_path);
+        }
+
+        $menu->update([
+            'image_path' => null,
+            'image_url' => null,
+        ]);
+
+        $menu->load('aliases:id,menu_id,alias,normalized_alias');
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Gambar menu berhasil dihapus.',
+            'data' => $this->serializeMenu($menu, true),
+        ]);
+    }
+
     public function destroy(Menu $menu): JsonResponse
     {
+        if ($menu->image_path) {
+            Storage::disk('public')->delete($menu->image_path);
+        }
+
         $menu->aliases()->delete();
         $menu->delete();
 
@@ -277,6 +338,51 @@ class MenuController extends Controller
         }
 
         return $slug;
+    }
+
+    private function serializeMenu(Menu $menu, bool $includeMeta = false): array
+    {
+        $data = [
+            'id' => $menu->id,
+            'name' => $menu->name,
+            'slug' => $menu->slug,
+            'description' => $menu->description,
+            'image_path' => $menu->image_path,
+            'image_external_url' => $menu->image_url,
+            'image_url' => $this->resolveMenuImageUrl($menu),
+            'price' => $menu->price,
+            'is_active' => (bool) $menu->is_active,
+            'category_id' => $menu->category_id,
+            'category' => [
+                'id' => $menu->category?->id,
+                'name' => $menu->category?->name,
+                'slug' => $menu->category?->slug,
+            ],
+            'aliases' => $menu->aliases
+                ->map(fn ($alias): array => [
+                    'id' => $alias->id,
+                    'alias' => $alias->alias,
+                    'normalized_alias' => $alias->normalized_alias,
+                ])
+                ->values()
+                ->all(),
+        ];
+
+        if ($includeMeta) {
+            $data['created_at'] = $menu->created_at?->toIso8601String();
+            $data['updated_at'] = $menu->updated_at?->toIso8601String();
+        }
+
+        return $data;
+    }
+
+    private function resolveMenuImageUrl(Menu $menu): ?string
+    {
+        if ($menu->image_path) {
+            return Storage::url($menu->image_path);
+        }
+
+        return $menu->image_url;
     }
 
     /**
