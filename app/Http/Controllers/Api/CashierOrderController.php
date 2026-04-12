@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Menu;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\QueueTrend;
 use App\Services\GroqService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,11 +40,18 @@ class CashierOrderController extends Controller
                 'oq.done_at',
             ]);
 
-        $current = $queueRows->first(fn ($row) => $row->status === 'processing')
-            ?? $queueRows->first(fn ($row) => $row->status === 'waiting');
+        $effectiveRows = $queueRows->map(function ($row) {
+            $effectiveStatus = $row->external_status === 'done' ? 'done' : $row->status;
+            $row->effective_status = $effectiveStatus;
 
-        $upcoming = $queueRows
-            ->filter(fn ($row) => $row->status === 'waiting')
+            return $row;
+        });
+
+        $current = $effectiveRows->first(fn ($row) => $row->effective_status === 'processing')
+            ?? $effectiveRows->first(fn ($row) => $row->effective_status === 'waiting');
+
+        $upcoming = $effectiveRows
+            ->filter(fn ($row) => $row->effective_status === 'waiting')
             ->take(6)
             ->values()
             ->map(fn ($row): array => [
@@ -54,8 +62,8 @@ class CashierOrderController extends Controller
             ])
             ->all();
 
-        $recentDone = $queueRows
-            ->filter(fn ($row) => $row->status === 'done')
+        $recentDone = $effectiveRows
+            ->filter(fn ($row) => $row->effective_status === 'done')
             ->sortByDesc(fn ($row) => $row->done_at ?? $row->external_updated_at)
             ->take(8)
             ->values()
@@ -64,8 +72,15 @@ class CashierOrderController extends Controller
                 'queue_number' => $row->queue_number,
                 'done_at' => optional($row->done_at)->toIso8601String(),
                 'external_updated_at' => optional($row->external_updated_at)->toIso8601String(),
+                'announce_key' => sprintf(
+                    '%s:%s',
+                    (string) $row->id,
+                    optional($row->done_at ?? $row->external_updated_at)->toIso8601String() ?? 'no-ts'
+                ),
             ])
             ->all();
+
+        $trend = $this->activeTrend();
 
         return response()->json([
             'data' => [
@@ -74,13 +89,84 @@ class CashierOrderController extends Controller
                     'queue_number' => $current->queue_number,
                     'order_code' => $current->order_code,
                     'customer_name' => $current->customer_name,
-                    'status' => $current->status,
+                    'status' => $current->effective_status,
                 ] : null,
                 'upcoming' => $upcoming,
                 'recent_done' => $recentDone,
+                'trend' => $trend,
                 'server_time' => now()->toIso8601String(),
             ],
         ]);
+    }
+
+    public function updateTrend(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'title' => ['required', 'string', 'max:120'],
+            'image_url' => ['required', 'url', 'max:2048'],
+            'caption' => ['nullable', 'string', 'max:300'],
+            'score' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'source_timestamp' => ['nullable', 'date'],
+            'expires_at' => ['nullable', 'date', 'after:now'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        if (($payload['is_active'] ?? true) === true) {
+            QueueTrend::query()->where('is_active', true)->update(['is_active' => false]);
+        }
+
+        $trend = QueueTrend::query()->create([
+            'title' => $payload['title'],
+            'image_url' => $payload['image_url'],
+            'caption' => $payload['caption'] ?? null,
+            'score' => $payload['score'] ?? null,
+            'source_timestamp' => $payload['source_timestamp'] ?? now(),
+            'expires_at' => $payload['expires_at'] ?? null,
+            'is_active' => (bool) ($payload['is_active'] ?? true),
+            'source_payload' => $payload,
+        ]);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Tren makanan berhasil diperbarui.',
+            'data' => [
+                'id' => $trend->id,
+                'title' => $trend->title,
+                'image_url' => $trend->image_url,
+                'caption' => $trend->caption,
+                'score' => $trend->score,
+                'source_timestamp' => $trend->source_timestamp?->toIso8601String(),
+                'expires_at' => $trend->expires_at?->toIso8601String(),
+                'is_active' => (bool) $trend->is_active,
+            ],
+        ]);
+    }
+
+    private function activeTrend(): ?array
+    {
+        $trend = QueueTrend::query()
+            ->where('is_active', true)
+            ->where(function ($query): void {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->orderByDesc('source_timestamp')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $trend) {
+            return null;
+        }
+
+        return [
+            'id' => $trend->id,
+            'title' => $trend->title,
+            'image_url' => $trend->image_url,
+            'caption' => $trend->caption,
+            'score' => $trend->score,
+            'source_timestamp' => $trend->source_timestamp?->toIso8601String(),
+            'expires_at' => $trend->expires_at?->toIso8601String(),
+        ];
     }
 
     public function index(Request $request): JsonResponse
@@ -158,10 +244,14 @@ class CashierOrderController extends Controller
     public function simulateExternalUpdate(Request $request, Order $order): JsonResponse
     {
         $payload = $request->validate([
-            'external_status' => ['nullable', 'in:not_set,received,processing,done'],
+            'external_status' => ['nullable', 'in:waiting,processing,done'],
             'external_note' => ['nullable', 'string', 'max:500'],
             'queue_status' => ['nullable', 'in:waiting,processing,done,cancelled'],
         ]);
+
+        if (! array_key_exists('queue_status', $payload) && array_key_exists('external_status', $payload) && $payload['external_status']) {
+            $payload['queue_status'] = $payload['external_status'];
+        }
 
         DB::transaction(function () use ($order, $payload): void {
             $orderData = [

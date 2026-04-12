@@ -110,8 +110,9 @@
                                     <p class="text-sm font-semibold text-gray-800" x-text="selectedOrder().order_code"></p>
                                     <p class="mt-1 text-xs text-gray-500" x-text="selectedOrder().customer_name || '-'" ></p>
                                     <p class="text-xs text-gray-500" x-text="genderLabel(selectedOrder().gender)" ></p>
-                                    <p class="mt-2 inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">
-                                        Sinkron Layer 2: <span class="ml-1" x-text="selectedOrder().external_status || 'not_set'"></span>
+                                    <p class="mt-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold"
+                                        :class="externalStatusTone(selectedOrder().external_status)">
+                                        Sinkron Layer 2: <span class="ml-1" x-text="externalStatusLabel(selectedOrder().external_status)"></span>
                                     </p>
                                     <ul class="mt-2 space-y-2 text-xs text-gray-700">
                                         <template x-for="item in selectedOrder().items" :key="item.id">
@@ -330,7 +331,11 @@
                     async fetchOrders() {
                         this.loadingOrders = true;
                         try {
-                            const response = await axios.get('/api/queue/orders');
+                            const response = await axios.get('/api/queue/orders', {
+                                params: {
+                                    status: 'queued,waiting,processing,done,cancelled',
+                                },
+                            });
                             this.orders = response.data.data || [];
                             this.pruneNoteDrafts();
                             if (this.selectedOrderId && !this.orders.find((order) => order.id === this.selectedOrderId)) {
@@ -697,6 +702,48 @@
                         }
 
                         return 'bg-slate-200 text-slate-700';
+                    },
+
+                    normalizeExternalStatus(value) {
+                        const status = String(value || '').toLowerCase();
+
+                        if (status === 'processing' || status === 'done' || status === 'waiting') {
+                            return status;
+                        }
+
+                        if (status === 'received' || status === 'not_set') {
+                            return 'waiting';
+                        }
+
+                        return 'waiting';
+                    },
+
+                    externalStatusLabel(value) {
+                        const status = this.normalizeExternalStatus(value);
+
+                        if (status === 'processing') {
+                            return 'Diproses';
+                        }
+
+                        if (status === 'done') {
+                            return 'Selesai';
+                        }
+
+                        return 'Menunggu';
+                    },
+
+                    externalStatusTone(value) {
+                        const status = this.normalizeExternalStatus(value);
+
+                        if (status === 'processing') {
+                            return 'bg-amber-100 text-amber-700';
+                        }
+
+                        if (status === 'done') {
+                            return 'bg-emerald-100 text-emerald-700';
+                        }
+
+                        return 'bg-blue-100 text-blue-700';
                     },
 
                     genderLabel(value) {

@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table): void {
-            $table->enum('external_status', ['not_set', 'received', 'processing', 'done'])
-                ->default('not_set')
+            $table->enum('external_status', ['waiting', 'processing', 'done'])
+                ->default('waiting')
                 ->after('status')
                 ->index();
             $table->string('external_reference')->nullable()->after('external_status');

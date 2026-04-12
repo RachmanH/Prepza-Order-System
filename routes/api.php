@@ -16,6 +16,7 @@ Route::post('/orders/voice/transcribe', [VoiceOrderController::class, 'transcrib
 
 Route::get('/queue/orders', [CashierOrderController::class, 'index']);
 Route::get('/queue/board', [CashierOrderController::class, 'board']);
+Route::post('/queue/trends/update', [CashierOrderController::class, 'updateTrend']);
 Route::patch('/queue/orders/{order}/start', [CashierOrderController::class, 'startProcessing']);
 Route::patch('/queue/orders/{order}/finish', [CashierOrderController::class, 'finish']);
 Route::patch('/queue/orders/{order}/cancel', [CashierOrderController::class, 'cancel']);
