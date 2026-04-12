@@ -158,7 +158,7 @@ class VoiceOrderController extends Controller
                 'source' => 'voice',
                 'parsing_confidence' => $parsed['confidence'],
                 'validation_status' => 'valid',
-                'status' => 'queued',
+                'status' => 'waiting',
                 'total_amount' => 0,
             ]);
 

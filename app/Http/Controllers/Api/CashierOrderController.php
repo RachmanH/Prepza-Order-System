@@ -10,6 +10,7 @@ use App\Services\GroqService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -19,19 +20,86 @@ class CashierOrderController extends Controller
 {
     public function __construct(private readonly GroqService $groqService) {}
 
+    public function board(): JsonResponse
+    {
+        $queueRows = Order::query()
+            ->join('order_queues as oq', 'oq.order_id', '=', 'orders.id')
+            ->whereIn('orders.status', ['waiting', 'processing', 'done'])
+            ->orderByRaw("CASE WHEN orders.status = 'processing' THEN 0 WHEN orders.status = 'waiting' THEN 1 ELSE 2 END")
+            ->orderBy('oq.queue_number')
+            ->get([
+                'orders.id',
+                'orders.order_code',
+                'orders.status',
+                'orders.external_status',
+                'orders.external_updated_at',
+                'orders.customer_name',
+                'oq.queue_number',
+                'oq.called_at',
+                'oq.done_at',
+            ]);
+
+        $current = $queueRows->first(fn ($row) => $row->status === 'processing')
+            ?? $queueRows->first(fn ($row) => $row->status === 'waiting');
+
+        $upcoming = $queueRows
+            ->filter(fn ($row) => $row->status === 'waiting')
+            ->take(6)
+            ->values()
+            ->map(fn ($row): array => [
+                'order_id' => $row->id,
+                'queue_number' => $row->queue_number,
+                'order_code' => $row->order_code,
+                'customer_name' => $row->customer_name,
+            ])
+            ->all();
+
+        $recentDone = $queueRows
+            ->filter(fn ($row) => $row->status === 'done')
+            ->sortByDesc(fn ($row) => $row->done_at ?? $row->external_updated_at)
+            ->take(8)
+            ->values()
+            ->map(fn ($row): array => [
+                'order_id' => $row->id,
+                'queue_number' => $row->queue_number,
+                'done_at' => optional($row->done_at)->toIso8601String(),
+                'external_updated_at' => optional($row->external_updated_at)->toIso8601String(),
+            ])
+            ->all();
+
+        return response()->json([
+            'data' => [
+                'current' => $current ? [
+                    'order_id' => $current->id,
+                    'queue_number' => $current->queue_number,
+                    'order_code' => $current->order_code,
+                    'customer_name' => $current->customer_name,
+                    'status' => $current->status,
+                ] : null,
+                'upcoming' => $upcoming,
+                'recent_done' => $recentDone,
+                'server_time' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $status = $request->query('status');
 
         $orders = Order::query()
             ->with(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status'])
+            ->leftJoin('order_queues as oq', 'oq.order_id', '=', 'orders.id')
+            ->select('orders.id', 'orders.order_code', 'orders.customer_name', 'orders.gender', 'orders.status', 'orders.external_status', 'orders.external_note', 'orders.external_updated_at', 'orders.total_amount', 'orders.created_at')
             ->when(
                 $status,
-                fn ($query) => $query->whereIn('status', explode(',', (string) $status)),
-                fn ($query) => $query->whereIn('status', ['queued', 'waiting', 'processing'])
+                fn ($query) => $query->whereIn('orders.status', explode(',', (string) $status)),
+                fn ($query) => $query->whereIn('orders.status', ['queued', 'waiting', 'processing'])
             )
-            ->orderByDesc('id')
-            ->get(['id', 'order_code', 'customer_name', 'gender', 'status', 'total_amount', 'created_at']);
+            ->orderByRaw("CASE WHEN oq.status IN ('waiting','processing') THEN 0 ELSE 1 END")
+            ->orderBy('oq.queue_number')
+            ->orderBy('orders.id')
+            ->get();
 
         return response()->json([
             'data' => $orders,
@@ -40,30 +108,23 @@ class CashierOrderController extends Controller
 
     public function confirm(Order $order): JsonResponse
     {
-        if (in_array($order->status, ['cancelled', 'done'], true)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Order sudah selesai atau dibatalkan.',
-            ], 422);
-        }
+        return $this->startProcessing($order);
+    }
 
-        DB::transaction(function () use ($order): void {
-            $order->update([
-                'status' => 'processing',
-            ]);
-
-            if ($order->queue) {
-                $order->queue->update([
-                    'status' => 'processing',
-                    'called_at' => $order->queue->called_at ?? now(),
-                ]);
-            }
-        });
-
+    public function startProcessing(Order $order): JsonResponse
+    {
         return response()->json([
-            'status' => 'ok',
-            'message' => 'Order berhasil dikonfirmasi.',
-        ]);
+            'status' => 'forbidden',
+            'message' => 'Aksi mulai proses hanya dapat dikendalikan dari Layer 2.',
+        ], 403);
+    }
+
+    public function finish(Order $order): JsonResponse
+    {
+        return response()->json([
+            'status' => 'forbidden',
+            'message' => 'Aksi selesaikan hanya dapat dikendalikan dari Layer 2.',
+        ], 403);
     }
 
     public function cancel(Order $order): JsonResponse
@@ -91,6 +152,59 @@ class CashierOrderController extends Controller
         return response()->json([
             'status' => 'ok',
             'message' => 'Order dibatalkan.',
+        ]);
+    }
+
+    public function simulateExternalUpdate(Request $request, Order $order): JsonResponse
+    {
+        $payload = $request->validate([
+            'external_status' => ['nullable', 'in:not_set,received,processing,done'],
+            'external_note' => ['nullable', 'string', 'max:500'],
+            'queue_status' => ['nullable', 'in:waiting,processing,done,cancelled'],
+        ]);
+
+        DB::transaction(function () use ($order, $payload): void {
+            $orderData = [
+                'external_updated_at' => now(),
+            ];
+
+            if (array_key_exists('external_status', $payload) && $payload['external_status'] !== null) {
+                $orderData['external_status'] = $payload['external_status'];
+            }
+
+            if (array_key_exists('external_note', $payload)) {
+                $orderData['external_note'] = $payload['external_note'];
+            }
+
+            if (array_key_exists('queue_status', $payload) && $payload['queue_status']) {
+                $orderData['status'] = $payload['queue_status'];
+            }
+
+            $order->update($orderData);
+
+            if ($order->queue && array_key_exists('queue_status', $payload) && $payload['queue_status']) {
+                $queueStatus = $payload['queue_status'] === 'cancelled' ? 'done' : $payload['queue_status'];
+                $queueUpdate = ['status' => $queueStatus];
+
+                if ($queueStatus === 'processing') {
+                    $queueUpdate['called_at'] = $order->queue->called_at ?? now();
+                }
+
+                if ($queueStatus === 'done') {
+                    $queueUpdate['done_at'] = now();
+                }
+
+                $order->queue->update($queueUpdate);
+            }
+        });
+
+        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Simulasi input eksternal berhasil diproses.',
+            'order' => $order,
+            'updated_by' => Auth::id(),
         ]);
     }
 

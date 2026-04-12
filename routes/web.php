@@ -19,7 +19,19 @@ Route::middleware([
         return view('order-kiosk');
     })->name('order.kiosk');
 
+    Route::get('/queue-management', function () {
+        return view('queue-management');
+    })->name('queue.management');
+
+    Route::get('/queue-board', function () {
+        return view('queue-board');
+    })->name('queue.board');
+
     Route::get('/cashier-panel', function () {
-        return view('cashier-panel');
+        return redirect()->route('queue.management');
     })->name('cashier.panel');
+
+    Route::get('/menu-management', function () {
+        return view('menu-management');
+    })->middleware('super_admin')->name('menu.management');
 });

@@ -18,9 +18,17 @@
                     <x-nav-link href="{{ route('order.kiosk') }}" :active="request()->routeIs('order.kiosk')">
                         {{ __('Order Kiosk') }}
                     </x-nav-link>
-                    <x-nav-link href="{{ route('cashier.panel') }}" :active="request()->routeIs('cashier.panel')">
-                        {{ __('Cashier Panel') }}
+                    <x-nav-link href="{{ route('queue.management') }}" :active="request()->routeIs('queue.management') || request()->routeIs('cashier.panel')">
+                        {{ __('Manajemen Antrian') }}
                     </x-nav-link>
+                    <x-nav-link href="{{ route('queue.board') }}" :active="request()->routeIs('queue.board')">
+                        {{ __('Display Antrian') }}
+                    </x-nav-link>
+                    @if (Auth::user()?->isSuperAdmin())
+                        <x-nav-link href="{{ route('menu.management') }}" :active="request()->routeIs('menu.management')">
+                            {{ __('Manajemen Menu') }}
+                        </x-nav-link>
+                    @endif
                 </div>
             </div>
 
@@ -151,6 +159,17 @@
             <x-responsive-nav-link href="{{ route('order.kiosk') }}" :active="request()->routeIs('order.kiosk')">
                 {{ __('Order Kiosk') }}
             </x-responsive-nav-link>
+            <x-responsive-nav-link href="{{ route('queue.management') }}" :active="request()->routeIs('queue.management') || request()->routeIs('cashier.panel')">
+                {{ __('Manajemen Antrian') }}
+            </x-responsive-nav-link>
+            <x-responsive-nav-link href="{{ route('queue.board') }}" :active="request()->routeIs('queue.board')">
+                {{ __('Display Antrian') }}
+            </x-responsive-nav-link>
+            @if (Auth::user()?->isSuperAdmin())
+                <x-responsive-nav-link href="{{ route('menu.management') }}" :active="request()->routeIs('menu.management')">
+                    {{ __('Manajemen Menu') }}
+                </x-responsive-nav-link>
+            @endif
         </div>
 
         <!-- Responsive Settings Options -->

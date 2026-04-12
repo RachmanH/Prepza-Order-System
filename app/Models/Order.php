@@ -22,6 +22,9 @@ class Order extends Model
         'parsing_confidence',
         'validation_status',
         'status',
+        'external_status',
+        'external_note',
+        'external_updated_at',
         'total_amount',
     ];
 
@@ -29,6 +32,7 @@ class Order extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'external_updated_at' => 'datetime',
         ];
     }
 
