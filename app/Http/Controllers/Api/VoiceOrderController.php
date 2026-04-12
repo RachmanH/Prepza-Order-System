@@ -23,13 +23,25 @@ class VoiceOrderController extends Controller
     public function store(Request $request): JsonResponse
     {
         $payload = $request->validate([
-            'raw_text' => ['required', 'string', 'max:500'],
+            'raw_text' => ['nullable', 'string', 'max:500', 'required_without:items'],
+            'items' => ['nullable', 'array', 'required_without:raw_text'],
+            'items.*.name' => ['required_with:items', 'string', 'max:120'],
+            'items.*.qty' => ['required_with:items', 'integer', 'min:1', 'max:99'],
+            'items.*.note' => ['nullable', 'string', 'max:255'],
             'customer_name' => ['required', 'string', 'max:100'],
             'gender' => ['nullable', 'in:male,female,other'],
         ]);
 
+        if (! empty($payload['items']) && is_array($payload['items'])) {
+            return $this->processOrderFromStructuredItems(
+                rawItems: $payload['items'],
+                customerName: $payload['customer_name'],
+                gender: $payload['gender'] ?? null,
+            );
+        }
+
         return $this->processOrderFromText(
-            rawText: $payload['raw_text'],
+            rawText: (string) ($payload['raw_text'] ?? ''),
             customerName: $payload['customer_name'],
             gender: $payload['gender'] ?? null,
         );
@@ -124,13 +136,20 @@ class VoiceOrderController extends Controller
         ]);
     }
 
-    private function processOrderFromText(string $rawText, string $customerName, ?string $gender = null): JsonResponse
+    private function processOrderFromText(string $rawText, string $customerName, ?string $gender = null, ?array $prevalidatedItems = null): JsonResponse
     {
         $analysis = $this->analyzeOrderText($rawText);
         $rawText = $analysis['raw_text'];
         $normalizedText = $analysis['normalized_text'];
         $parsed = $analysis['parsed'];
-        $validated = $analysis['validated'];
+        $validated = $prevalidatedItems
+            ? [
+                'status' => 'valid',
+                'valid_items' => $prevalidatedItems,
+                'valid_names' => collect($prevalidatedItems)->map(fn (array $item) => $item['menu']->name)->values()->all(),
+                'invalid' => [],
+            ]
+            : $analysis['validated'];
 
         if ($validated['status'] === 'invalid') {
             return response()->json([
@@ -172,6 +191,7 @@ class VoiceOrderController extends Controller
                 $order->items()->create([
                     'menu_id' => $item['menu']->id,
                     'item_name' => $item['menu']->name,
+                    'note' => $item['note'] ?? null,
                     'qty' => $item['qty'],
                     'unit_price' => $unitPrice,
                     'subtotal' => $subtotal,
@@ -188,10 +208,11 @@ class VoiceOrderController extends Controller
             ]);
 
             $payloadItems = $order->items()
-                ->get(['item_name', 'qty'])
+                ->get(['item_name', 'qty', 'note'])
                 ->map(fn ($item) => [
                     'name' => $item->item_name,
                     'qty' => $item->qty,
+                    'note' => $item->note,
                 ])
                 ->values()
                 ->all();
@@ -218,6 +239,43 @@ class VoiceOrderController extends Controller
             'items' => $result['items'],
             'message' => 'Pesanan Anda: '.$this->readableItemList($result['items']).', nomor antrian '.$result['queue']->queue_number.'.',
         ], 201);
+    }
+
+    /**
+     * @param  array<int, array{name:string,qty:int,note?:string|null}>  $rawItems
+     */
+    private function processOrderFromStructuredItems(array $rawItems, string $customerName, ?string $gender = null): JsonResponse
+    {
+        $validated = $this->validateStructuredItems($rawItems);
+
+        if ($validated['status'] === 'invalid') {
+            return response()->json([
+                'status' => 'invalid',
+                'message' => 'Pesanan tidak dikenali, silakan ulangi.',
+                'items' => [],
+            ], 422);
+        }
+
+        if ($validated['status'] === 'partial') {
+            return response()->json([
+                'status' => 'partial',
+                'message' => 'Menu '.implode(', ', $validated['invalid']).' tidak tersedia, lanjutkan dengan '.implode(', ', $validated['valid_names']).' saja?',
+                'valid' => $validated['valid_names'],
+                'invalid' => $validated['invalid'],
+            ]);
+        }
+
+        $rawText = collect($validated['valid_items'])
+            ->map(function (array $item): string {
+                $qty = max(1, (int) ($item['qty'] ?? 1));
+                $base = $qty > 1 ? $qty.' '.$item['menu']->name : $item['menu']->name;
+                $note = Str::of((string) ($item['note'] ?? ''))->squish()->toString();
+
+                return $note !== '' ? $base.' ('.$note.')' : $base;
+            })
+            ->implode(', ');
+
+        return $this->processOrderFromText($rawText, $customerName, $gender, $validated['valid_items']);
     }
 
     /**
@@ -702,6 +760,86 @@ class VoiceOrderController extends Controller
             'status' => 'valid',
             'valid_items' => $grouped,
             'valid_names' => collect($grouped)->map(fn (array $item) => $item['menu']->name)->values()->all(),
+            'invalid' => [],
+        ];
+    }
+
+    /**
+     * @param  array<int, array{name:string,qty:int,note?:string|null}>  $rawItems
+     */
+    private function validateStructuredItems(array $rawItems): array
+    {
+        if (empty($rawItems)) {
+            return [
+                'status' => 'invalid',
+                'valid_items' => [],
+                'valid_names' => [],
+                'invalid' => [],
+            ];
+        }
+
+        $menus = Menu::query()
+            ->where('is_active', true)
+            ->with('aliases:id,menu_id,normalized_alias')
+            ->get(['id', 'name', 'price']);
+
+        $nameIndex = $menus->keyBy(fn (Menu $menu) => Str::lower($menu->name));
+        $aliasIndex = $menus
+            ->flatMap(function (Menu $menu): Collection {
+                return $menu->aliases->mapWithKeys(function ($alias) use ($menu): array {
+                    return [Str::lower($alias->normalized_alias) => $menu];
+                });
+            });
+
+        $validItems = [];
+        $invalid = [];
+
+        foreach ($rawItems as $rawItem) {
+            $candidate = Str::of((string) ($rawItem['name'] ?? ''))->lower()->squish()->toString();
+            $candidate = $this->normalizePossessiveSuffix($candidate);
+            $qty = max(1, (int) ($rawItem['qty'] ?? 1));
+            $note = Str::of((string) ($rawItem['note'] ?? ''))->squish()->limit(255, '')->toString();
+
+            if ($candidate === '') {
+                continue;
+            }
+
+            $menu = $nameIndex->get($candidate) ?? $aliasIndex->get($candidate);
+
+            if (! $menu) {
+                $invalid[] = $candidate;
+                continue;
+            }
+
+            $validItems[] = [
+                'menu' => $menu,
+                'qty' => $qty,
+                'note' => $note !== '' ? $note : null,
+            ];
+        }
+
+        if (empty($validItems)) {
+            return [
+                'status' => 'invalid',
+                'valid_items' => [],
+                'valid_names' => [],
+                'invalid' => $invalid,
+            ];
+        }
+
+        if (! empty($invalid)) {
+            return [
+                'status' => 'partial',
+                'valid_items' => $validItems,
+                'valid_names' => collect($validItems)->map(fn (array $item) => $item['menu']->name)->values()->all(),
+                'invalid' => $invalid,
+            ];
+        }
+
+        return [
+            'status' => 'valid',
+            'valid_items' => $validItems,
+            'valid_names' => collect($validItems)->map(fn (array $item) => $item['menu']->name)->values()->all(),
             'invalid' => [],
         ];
     }

@@ -115,13 +115,22 @@
                                     </p>
                                     <ul class="mt-2 space-y-2 text-xs text-gray-700">
                                         <template x-for="item in selectedOrder().items" :key="item.id">
-                                            <li class="flex items-center justify-between gap-2 rounded border border-gray-200 bg-white p-2">
-                                                <span x-text="`${item.item_name} x${item.qty}`"></span>
-                                                <div class="flex items-center gap-1">
-                                                    <button type="button" class="h-6 w-6 rounded border border-gray-300 text-gray-700" :disabled="busy" @click="updateItemQty(item, -1)">-</button>
-                                                    <button type="button" class="h-6 w-6 rounded border border-gray-300 text-gray-700" :disabled="busy" @click="updateItemQty(item, 1)">+</button>
-                                                    <button type="button" class="rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600" :disabled="busy" @click="removeItem(item)">Hapus</button>
+                                            <li class="space-y-2 rounded border border-gray-200 bg-white p-2">
+                                                <div class="flex items-center justify-between gap-2">
+                                                    <span x-text="`${item.item_name} x${item.qty}`"></span>
+                                                    <div class="flex items-center gap-1">
+                                                        <button type="button" class="h-6 w-6 rounded border border-gray-300 text-gray-700" :disabled="busy" @click="updateItemQty(item, -1)">-</button>
+                                                        <button type="button" class="h-6 w-6 rounded border border-gray-300 text-gray-700" :disabled="busy" @click="updateItemQty(item, 1)">+</button>
+                                                        <button type="button" class="rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600" :disabled="busy" @click="removeItem(item)">Hapus</button>
+                                                    </div>
                                                 </div>
+                                                <input type="text"
+                                                    :value="getItemNoteDraft(item)"
+                                                    @focus="isEditingNote = true"
+                                                    @input="setItemNoteDraft(item, $event.target.value)"
+                                                    @blur="isEditingNote = false; updateItemNote(item, getItemNoteDraft(item))"
+                                                    class="w-full rounded-md border-gray-300 text-[11px] focus:border-indigo-500 focus:ring-indigo-500"
+                                                    placeholder="Keterangan item (contoh: jangan pedas)">
                                             </li>
                                         </template>
                                     </ul>
@@ -185,11 +194,17 @@
                     shouldKeepListening: false,
                     speechCommitted: '',
                     speechInterimCurrent: '',
+                    noteDrafts: {},
+                    isEditingNote: false,
 
                     init() {
                         this.initSpeech();
                         this.fetchOrders();
-                        setInterval(() => this.fetchOrders(), 5000);
+                        setInterval(() => {
+                            if (!this.isEditingNote) {
+                                this.fetchOrders();
+                            }
+                        }, 5000);
                     },
 
                     initSpeech() {
@@ -317,6 +332,7 @@
                         try {
                             const response = await axios.get('/api/queue/orders');
                             this.orders = response.data.data || [];
+                            this.pruneNoteDrafts();
                             if (this.selectedOrderId && !this.orders.find((order) => order.id === this.selectedOrderId)) {
                                 this.selectedOrderId = null;
                             }
@@ -335,6 +351,40 @@
 
                     selectedOrder() {
                         return this.orders.find((order) => order.id === this.selectedOrderId) || null;
+                    },
+
+                    getItemNoteDraft(item) {
+                        const key = String(item?.id || '');
+                        if (!key) {
+                            return '';
+                        }
+
+                        if (Object.prototype.hasOwnProperty.call(this.noteDrafts, key)) {
+                            return this.noteDrafts[key];
+                        }
+
+                        return String(item?.note || '');
+                    },
+
+                    setItemNoteDraft(item, value) {
+                        const key = String(item?.id || '');
+                        if (!key) {
+                            return;
+                        }
+
+                        this.noteDrafts[key] = String(value || '');
+                    },
+
+                    pruneNoteDrafts() {
+                        const validIds = new Set(
+                            this.orders.flatMap((order) => (order.items || []).map((item) => String(item.id)))
+                        );
+
+                        Object.keys(this.noteDrafts).forEach((key) => {
+                            if (!validIds.has(String(key))) {
+                                delete this.noteDrafts[key];
+                            }
+                        });
                     },
 
                     filteredOrders() {
@@ -384,6 +434,12 @@
                             return;
                         }
 
+                        const handledNoteCommand = await this.applyVoiceNoteCommandToSelected(this.appendText);
+                        if (handledNoteCommand) {
+                            this.appendText = '';
+                            return;
+                        }
+
                         this.busy = true;
                         try {
                             const response = await axios.post(`/api/queue/orders/${order.id}/append-voice`, {
@@ -401,6 +457,147 @@
                         } finally {
                             this.busy = false;
                         }
+                    },
+
+                    normalizeCommandText(text) {
+                        return String(text || '')
+                            .toLowerCase()
+                            .replace(/\b(?:saya mau|aku mau|saya pesan|aku pesan|mau|pesan|tolong|dong|ya|kak|nih|deh|please)\b/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                    },
+
+                    normalizePossessiveSuffix(text) {
+                        return String(text || '')
+                            .replace(/\b([a-z0-9]{3,})nya\b/g, '$1')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                    },
+
+                    async resolveMenuCandidate(candidate) {
+                        const normalized = this.normalizePossessiveSuffix(this.normalizeCommandText(candidate));
+
+                        if (!normalized) {
+                            return null;
+                        }
+
+                        try {
+                            const response = await axios.post('/api/menus/resolve', {
+                                candidate: normalized,
+                            });
+
+                            return response.data.data || null;
+                        } catch (error) {
+                            return null;
+                        }
+                    },
+
+                    async applyVoiceNoteCommandToSelected(rawText) {
+                        const order = this.selectedOrder();
+                        if (!order || !Array.isArray(order.items) || order.items.length === 0) {
+                            return false;
+                        }
+
+                        const normalized = this.normalizeCommandText(rawText);
+                        const directPattern = normalized.match(/^(.*?)\s*(?:keterangan|catatan|note)\s+(.+)$/);
+
+                        if (!directPattern) {
+                            return false;
+                        }
+
+                        const rawTargetPart = this.normalizePossessiveSuffix(String(directPattern[1] || '').trim());
+                        const rawNotePart = String(directPattern[2] || '').replace(/\b(?:oke|ok|okay)\b$/g, '').trim();
+
+                        if (!rawTargetPart || !rawNotePart) {
+                            this.message = 'Format keterangan belum lengkap.';
+                            this.messageTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        const normalizedTargetPart = this.normalizePossessiveSuffix(rawTargetPart);
+                        const orderItemNames = (order.items || [])
+                            .map((item) => this.normalizePossessiveSuffix(String(item.item_name || '').toLowerCase()))
+                            .filter(Boolean)
+                            .sort((a, b) => b.length - a.length);
+
+                        let resolvedName = '';
+
+                        // Primary: direct match from currently selected order items (most reliable).
+                        resolvedName = orderItemNames.find((name) => normalizedTargetPart.includes(name)) || '';
+
+                        // Secondary: trim leading words and retry local match.
+                        if (!resolvedName && normalizedTargetPart.includes(' ')) {
+                            const tokens = normalizedTargetPart.split(/\s+/).filter(Boolean);
+                            for (let start = 0; start < tokens.length; start++) {
+                                const candidate = this.normalizePossessiveSuffix(tokens.slice(start).join(' '));
+                                const localMatch = orderItemNames.find((name) => candidate.includes(name));
+                                if (localMatch) {
+                                    resolvedName = localMatch;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Fallback: resolve via menu API.
+                        if (!resolvedName) {
+                            const resolved = await this.resolveMenuCandidate(normalizedTargetPart);
+                            if (resolved?.matched_name) {
+                                resolvedName = this.normalizePossessiveSuffix(String(resolved.matched_name).toLowerCase());
+                            }
+                        }
+
+                        if (!resolvedName) {
+                            this.message = 'Target menu untuk keterangan tidak dikenali.';
+                            this.messageTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        let note = rawNotePart;
+                        if (note.startsWith(`${resolvedName} `)) {
+                            note = note.slice(resolvedName.length).trim();
+                        }
+
+                        // In the "Tambah Item Lagi" panel, this command should add a new item
+                        // and attach note to the newly added row, not overwrite existing notes.
+                        this.busy = true;
+                        try {
+                            await axios.post(`/api/queue/orders/${order.id}/append-voice`, {
+                                raw_text: resolvedName,
+                            });
+
+                            await this.fetchOrders();
+
+                            const refreshedOrder = this.selectedOrder();
+                            const matches = (refreshedOrder?.items || [])
+                                .filter((item) => this.normalizePossessiveSuffix(String(item.item_name || '').toLowerCase()) === resolvedName);
+
+                            const targetItem = [...matches].reverse().find((item) => !String(item.note || '').trim())
+                                || matches[matches.length - 1]
+                                || null;
+
+                            if (!targetItem) {
+                                this.message = `Item ${resolvedName} berhasil ditambahkan, tetapi note belum bisa dipasang.`;
+                                this.messageTone = 'text-amber-600';
+                                return true;
+                            }
+
+                            await axios.patch(`/api/queue/orders/${order.id}/items/${targetItem.id}`, {
+                                note: note || null,
+                            });
+
+                            this.noteDrafts[String(targetItem.id)] = note;
+                            await this.fetchOrders();
+                            this.message = `Item ${resolvedName} ditambahkan dengan keterangan.`;
+                            this.messageTone = 'text-emerald-600';
+                        } catch (error) {
+                            const data = error?.response?.data || {};
+                            this.message = data.message || 'Gagal menambahkan item dengan keterangan.';
+                            this.messageTone = 'text-rose-600';
+                        } finally {
+                            this.busy = false;
+                        }
+
+                        return true;
                     },
 
                     async updateItemQty(item, delta) {
@@ -426,6 +623,37 @@
                         } catch (error) {
                             const data = error?.response?.data || {};
                             this.message = data.message || 'Gagal mengubah qty item.';
+                            this.messageTone = 'text-rose-600';
+                        } finally {
+                            this.busy = false;
+                        }
+                    },
+
+                    async updateItemNote(item, noteValue) {
+                        const order = this.selectedOrder();
+                        if (!order || !item) {
+                            return;
+                        }
+
+                        const nextNote = String(noteValue || '').trim();
+                        const currentNote = String(item.note || '').trim();
+
+                        if (nextNote === currentNote) {
+                            return;
+                        }
+
+                        this.busy = true;
+                        try {
+                            const response = await axios.patch(`/api/queue/orders/${order.id}/items/${item.id}`, {
+                                note: nextNote || null,
+                            });
+                            this.noteDrafts[String(item.id)] = nextNote;
+                            this.message = response.data.message || 'Keterangan item diperbarui.';
+                            this.messageTone = 'text-emerald-600';
+                            await this.fetchOrders();
+                        } catch (error) {
+                            const data = error?.response?.data || {};
+                            this.message = data.message || 'Gagal memperbarui keterangan item.';
                             this.messageTone = 'text-rose-600';
                         } finally {
                             this.busy = false;

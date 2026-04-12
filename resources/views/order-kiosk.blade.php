@@ -36,15 +36,22 @@
                 </div>
                 
                 <div class="mt-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <template x-for="item in confirmingItems" :key="item.name + item.qty">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-sm font-semibold text-slate-800" x-text="item.name"></span>
-                            <div class="flex items-center gap-1">
-                                <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, -1)">-</button>
-                                <span class="rounded-full bg-cyan-100 px-2 py-1 text-xs font-bold text-cyan-700" x-text="`x${item.qty}`"></span>
-                                <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, 1)">+</button>
-                                <button type="button" class="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-600" @click="removeConfirmingItem(item.name)">Hapus</button>
+                    <template x-for="(item, itemIndex) in confirmingItems" :key="`${item.name}-${itemIndex}`">
+                        <div class="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-sm font-semibold text-slate-800" x-text="item.name"></span>
+                                <div class="flex items-center gap-1">
+                                    <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, -1)">-</button>
+                                    <span class="rounded-full bg-cyan-100 px-2 py-1 text-xs font-bold text-cyan-700" x-text="`x${item.qty}`"></span>
+                                    <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, 1)">+</button>
+                                    <button type="button" class="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-600" @click="removeConfirmingItem(item.name)">Hapus</button>
+                                </div>
                             </div>
+                            <input type="text"
+                                :value="item.note || ''"
+                                @input="updateConfirmingItemNote(item.name, $event.target.value)"
+                                class="w-full rounded-lg border-slate-300 text-xs focus:border-cyan-500 focus:ring-cyan-500"
+                                placeholder="Keterangan item (contoh: tidak pedas)">
                         </div>
                     </template>
                 </div>
@@ -147,10 +154,11 @@
                                     <template x-if="finalItems.length === 0">
                                         <li class="text-slate-500">-</li>
                                     </template>
-                                    <template x-for="item in finalItems" :key="item.name + item.qty">
+                                    <template x-for="item in finalItems" :key="item.name + item.qty + (item.note || '')">
                                         <li>
                                             <span x-text="item.name"></span>
                                             <span class="font-semibold" x-text="`×${item.qty}`"></span>
+                                            <span x-show="item.note" class="text-[11px] text-slate-500" x-text="`(${item.note})`"></span>
                                         </li>
                                     </template>
                                 </ul>
@@ -883,10 +891,14 @@
                         this.detectedItems = (preview.items || []).map((item) => ({
                             name: String(item.name || '').toLowerCase(),
                             qty: Math.max(1, Number(item.qty || 1)),
+                            note: String(item.note || '').trim() || null,
                         }));
 
                         if (!this.showConfirmModal) {
-                            this.confirmingItems = [...this.detectedItems];
+                            this.confirmingItems = this.detectedItems.map((item) => ({
+                                ...item,
+                                note: item.note || null,
+                            }));
                         }
 
                         if (this.detectedItems.length === 0) {
@@ -993,7 +1005,11 @@
                             return;
                         }
 
-                        this.confirmingItems = [...this.detectedItems];
+                        this.confirmingItems = this.detectedItems.map((item) => ({
+                            ...item,
+                            note: item.note || null,
+                        }));
+                        await this.applyVoiceNoteCommand(this.rawText);
                         this.showConfirmModal = true;
                         this.$nextTick(() => {
                             document.body.style.overflow = 'hidden';
@@ -1043,7 +1059,10 @@
                     generateReceiptHTML() {
                         const itemsHTML = this.finalItems.map((item) => `
                             <tr>
-                                <td style="padding: 8px; text-align: left;">${item.name}</td>
+                                <td style="padding: 8px; text-align: left;">
+                                    ${item.name}
+                                    ${item.note ? `<div style="font-size: 11px; color: #666; margin-top: 3px;">(${item.note})</div>` : ''}
+                                </td>
                                 <td style="padding: 8px; text-align: right;">x${item.qty}</td>
                             </tr>
                         `).join('');
@@ -1216,13 +1235,49 @@
                         this.confirmingItems = this.confirmingItems.filter((item) => item.name !== name);
                     },
 
+                    updateConfirmingItemNote(name, note) {
+                        const normalizedNote = String(note || '').trim();
+                        this.confirmingItems = this.confirmingItems.map((item) => {
+                            if (item.name !== name) {
+                                return item;
+                            }
+
+                            return {
+                                ...item,
+                                note: normalizedNote || null,
+                            };
+                        });
+
+                        this.detectedItems = this.detectedItems.map((item) => {
+                            if (item.name !== name) {
+                                return item;
+                            }
+
+                            return {
+                                ...item,
+                                note: normalizedNote || null,
+                            };
+                        });
+                    },
+
                     buildRawTextFromConfirmingItems() {
                         return this.confirmingItems
                             .map((item) => {
                                 const qty = Math.max(1, Number(item.qty || 1));
-                                return qty > 1 ? `${qty} ${item.name}` : item.name;
+                                const base = qty > 1 ? `${qty} ${item.name}` : item.name;
+                                const note = String(item.note || '').trim();
+
+                                return note ? `${base} (${note})` : base;
                             })
                             .join(', ');
+                    },
+
+                    buildStructuredItemsPayload() {
+                        return this.confirmingItems.map((item) => ({
+                            name: String(item.name || '').trim(),
+                            qty: Math.max(1, Number(item.qty || 1)),
+                            note: String(item.note || '').trim() || null,
+                        }));
                     },
 
                     normalizeCommandText(text) {
@@ -1262,6 +1317,122 @@
                             targetName: parsedTarget.name,
                             qty: Math.max(1, Number(parsedTarget.qty || 1)),
                         };
+                    },
+
+                    async applyVoiceNoteCommand(rawText) {
+                        const normalized = this.normalizeCommandText(rawText);
+                        const directPattern = normalized.match(/^(.*?)\s*(?:keterangan|catatan|note)\s+(.+)$/);
+
+                        if (directPattern) {
+                            const rawTargetPart = this.normalizePossessiveSuffix(String(directPattern[1] || '').trim());
+                            const notePart = String(directPattern[2] || '').replace(/\b(?:oke|ok|okay)\b$/g, '').trim();
+
+                            if (!notePart) {
+                                this.statusMessage = 'Format keterangan belum lengkap.';
+                                this.statusTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            let targetPart = rawTargetPart;
+
+                            if (targetPart.includes(' ')) {
+                                const tokens = targetPart.split(/\s+/).filter(Boolean);
+                                for (let start = 0; start < tokens.length; start++) {
+                                    const candidate = this.normalizePossessiveSuffix(tokens.slice(start).join(' '));
+                                    if (!candidate) {
+                                        continue;
+                                    }
+
+                                    const resolvedCandidate = await this.resolveMenuCandidate(candidate);
+                                    if (resolvedCandidate?.matched_name) {
+                                        targetPart = candidate;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!targetPart) {
+                                this.statusMessage = 'Tidak bisa mengenali target menu untuk keterangan.';
+                                this.statusTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            const resolvedDirect = await this.resolveMenuCandidate(targetPart);
+                            if (resolvedDirect?.matched_name) {
+                                const resolvedName = String(resolvedDirect.matched_name).toLowerCase();
+                                const exists = this.confirmingItems.find((item) => item.name === resolvedName);
+
+                                if (!exists) {
+                                    this.statusMessage = `Item ${resolvedName} tidak ada di daftar konfirmasi.`;
+                                    this.statusTone = 'text-rose-600';
+                                    return true;
+                                }
+
+                                let cleanedNote = notePart;
+                                if (cleanedNote.startsWith(`${resolvedName} `)) {
+                                    cleanedNote = cleanedNote.slice(resolvedName.length).trim();
+                                }
+
+                                this.updateConfirmingItemNote(resolvedName, cleanedNote || notePart);
+                                this.rawText = this.buildRawTextFromConfirmingItems();
+                                this.statusMessage = `Keterangan untuk ${resolvedName} diperbarui.`;
+                                this.statusTone = 'text-emerald-600';
+                                return true;
+                            }
+                        }
+
+                        const notePrefixMatch = normalized.match(/(?:^|\s)(?:keterangan|catatan|note)\s+(.+)$/);
+
+                        if (!notePrefixMatch) {
+                            return false;
+                        }
+
+                        const body = String(notePrefixMatch[1] || '').replace(/\b(?:oke|ok|okay)\b$/g, '').trim();
+                        if (!body) {
+                            this.statusMessage = 'Format keterangan belum lengkap.';
+                            this.statusTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        const tokens = body.split(/\s+/).filter(Boolean);
+                        if (tokens.length < 2) {
+                            this.statusMessage = 'Gunakan format: keterangan <menu> <catatan>.';
+                            this.statusTone = 'text-rose-600';
+                            return true;
+                        }
+
+                        for (let cut = tokens.length - 1; cut >= 1; cut--) {
+                            const targetPart = this.normalizePossessiveSuffix(tokens.slice(0, cut).join(' '));
+                            const notePart = tokens.slice(cut).join(' ').trim();
+
+                            if (!targetPart || !notePart) {
+                                continue;
+                            }
+
+                            const resolved = await this.resolveMenuCandidate(targetPart);
+                            if (!resolved || !resolved.matched_name) {
+                                continue;
+                            }
+
+                            const resolvedName = String(resolved.matched_name).toLowerCase();
+                            const exists = this.confirmingItems.find((item) => item.name === resolvedName);
+
+                            if (!exists) {
+                                this.statusMessage = `Item ${resolvedName} tidak ada di daftar konfirmasi.`;
+                                this.statusTone = 'text-rose-600';
+                                return true;
+                            }
+
+                            this.updateConfirmingItemNote(resolvedName, notePart);
+                            this.rawText = this.buildRawTextFromConfirmingItems();
+                            this.statusMessage = `Keterangan untuk ${resolvedName} diperbarui.`;
+                            this.statusTone = 'text-emerald-600';
+                            return true;
+                        }
+
+                        this.statusMessage = 'Tidak bisa mengenali target menu untuk keterangan.';
+                        this.statusTone = 'text-rose-600';
+                        return true;
                     },
 
                     async resolveMenuCandidate(candidate) {
@@ -1311,7 +1482,7 @@
                         const command = this.parseVoiceCommand(rawText);
 
                         if (!command) {
-                            return false;
+                            return this.applyVoiceNoteCommand(rawText);
                         }
 
                         const resolved = await this.resolveMenuCandidate(command.targetName);
@@ -1352,6 +1523,7 @@
                                     {
                                         name,
                                         qty,
+                                        note: null,
                                     },
                                 ];
                             }
@@ -1490,6 +1662,7 @@
                             const confirmedRawText = this.buildRawTextFromConfirmingItems();
                             const response = await axios.post('/api/orders/voice', {
                                 raw_text: confirmedRawText,
+                                items: this.buildStructuredItemsPayload(),
                                 customer_name: this.customerName,
                                 gender: this.customerGender || null,
                             });

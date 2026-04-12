@@ -88,7 +88,7 @@ class CashierOrderController extends Controller
         $status = $request->query('status');
 
         $orders = Order::query()
-            ->with(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status'])
+            ->with(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status'])
             ->leftJoin('order_queues as oq', 'oq.order_id', '=', 'orders.id')
             ->select('orders.id', 'orders.order_code', 'orders.customer_name', 'orders.gender', 'orders.status', 'orders.external_status', 'orders.external_note', 'orders.external_updated_at', 'orders.total_amount', 'orders.created_at')
             ->when(
@@ -198,7 +198,7 @@ class CashierOrderController extends Controller
             }
         });
 
-        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+        $order->load(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status']);
 
         return response()->json([
             'status' => 'ok',
@@ -262,6 +262,7 @@ class CashierOrderController extends Controller
                 $order->items()->create([
                     'menu_id' => $item['menu']->id,
                     'item_name' => $item['menu']->name,
+                    'note' => null,
                     'qty' => $item['qty'],
                     'unit_price' => $unitPrice,
                     'subtotal' => $subtotal,
@@ -274,7 +275,7 @@ class CashierOrderController extends Controller
             ]);
         });
 
-        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+        $order->load(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status']);
 
         return response()->json([
             'status' => 'ok',
@@ -300,33 +301,47 @@ class CashierOrderController extends Controller
         }
 
         $payload = $request->validate([
-            'qty' => ['required', 'integer', 'min:1', 'max:99'],
+            'qty' => ['nullable', 'integer', 'min:1', 'max:99', 'required_without:note'],
+            'note' => ['nullable', 'string', 'max:255', 'required_without:qty'],
         ]);
 
         DB::transaction(function () use ($order, $item, $payload): void {
-            $qty = (int) $payload['qty'];
-            $unitPrice = (float) ($item->unit_price ?? 0);
+            $itemUpdates = [];
 
-            if ($unitPrice <= 0 && (int) $item->qty > 0) {
-                $unitPrice = (float) $item->subtotal / (int) $item->qty;
+            if (array_key_exists('qty', $payload) && $payload['qty'] !== null) {
+                $qty = (int) $payload['qty'];
+                $unitPrice = (float) ($item->unit_price ?? 0);
+
+                if ($unitPrice <= 0 && (int) $item->qty > 0) {
+                    $unitPrice = (float) $item->subtotal / (int) $item->qty;
+                }
+
+                $itemUpdates['qty'] = $qty;
+                $itemUpdates['unit_price'] = $unitPrice;
+                $itemUpdates['subtotal'] = $unitPrice * $qty;
             }
 
-            $item->update([
-                'qty' => $qty,
-                'unit_price' => $unitPrice,
-                'subtotal' => $unitPrice * $qty,
-            ]);
+            if (array_key_exists('note', $payload)) {
+                $note = trim((string) ($payload['note'] ?? ''));
+                $itemUpdates['note'] = $note !== '' ? $note : null;
+            }
+
+            if (! empty($itemUpdates)) {
+                $item->update($itemUpdates);
+            }
 
             $order->update([
                 'total_amount' => (float) $order->items()->sum('subtotal'),
             ]);
         });
 
-        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+        $order->load(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status']);
 
         return response()->json([
             'status' => 'ok',
-            'message' => 'Qty item berhasil diperbarui.',
+            'message' => array_key_exists('note', $payload) && ! array_key_exists('qty', $payload)
+                ? 'Keterangan item berhasil diperbarui.'
+                : 'Item order berhasil diperbarui.',
             'order' => $order,
         ]);
     }
@@ -355,7 +370,7 @@ class CashierOrderController extends Controller
             ]);
         });
 
-        $order->load(['items:id,order_id,item_name,qty,subtotal', 'queue:queue_number,order_id,status']);
+        $order->load(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status']);
 
         return response()->json([
             'status' => 'ok',
