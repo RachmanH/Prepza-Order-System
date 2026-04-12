@@ -18,6 +18,9 @@
                     <x-nav-link href="{{ route('order.kiosk') }}" :active="request()->routeIs('order.kiosk')">
                         {{ __('Order Kiosk') }}
                     </x-nav-link>
+                    <x-nav-link href="{{ route('cashier.panel') }}" :active="request()->routeIs('cashier.panel')">
+                        {{ __('Cashier Panel') }}
+                    </x-nav-link>
                 </div>
             </div>
 

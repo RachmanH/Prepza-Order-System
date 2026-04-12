@@ -24,9 +24,15 @@ class VoiceOrderController extends Controller
     {
         $payload = $request->validate([
             'raw_text' => ['required', 'string', 'max:500'],
+            'customer_name' => ['required', 'string', 'max:100'],
+            'gender' => ['nullable', 'in:male,female,other'],
         ]);
 
-        return $this->processOrderFromText($payload['raw_text']);
+        return $this->processOrderFromText(
+            rawText: $payload['raw_text'],
+            customerName: $payload['customer_name'],
+            gender: $payload['gender'] ?? null,
+        );
     }
 
     public function transcribe(Request $request): JsonResponse
@@ -34,6 +40,8 @@ class VoiceOrderController extends Controller
         $payload = $request->validate([
             'audio' => ['required', 'file', 'mimetypes:audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/webm,audio/ogg', 'max:20480'],
             'auto_order' => ['nullable', 'boolean'],
+            'customer_name' => ['nullable', 'string', 'max:100'],
+            'gender' => ['nullable', 'in:male,female,other'],
         ]);
 
         $audio = $payload['audio'];
@@ -50,7 +58,18 @@ class VoiceOrderController extends Controller
         }
 
         if ($request->boolean('auto_order')) {
-            return $this->processOrderFromText($text);
+            if (trim((string) ($payload['customer_name'] ?? '')) === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Nama pelanggan wajib diisi untuk auto order.',
+                ], 422);
+            }
+
+            return $this->processOrderFromText(
+                rawText: $text,
+                customerName: (string) $payload['customer_name'],
+                gender: $payload['gender'] ?? null,
+            );
         }
 
         return response()->json([
@@ -105,7 +124,7 @@ class VoiceOrderController extends Controller
         ]);
     }
 
-    private function processOrderFromText(string $rawText): JsonResponse
+    private function processOrderFromText(string $rawText, string $customerName, ?string $gender = null): JsonResponse
     {
         $analysis = $this->analyzeOrderText($rawText);
         $rawText = $analysis['raw_text'];
@@ -130,8 +149,10 @@ class VoiceOrderController extends Controller
             ]);
         }
 
-        $result = DB::transaction(function () use ($rawText, $normalizedText, $validated, $parsed): array {
+        $result = DB::transaction(function () use ($rawText, $normalizedText, $validated, $parsed, $customerName, $gender): array {
             $order = Order::create([
+                'customer_name' => $customerName,
+                'gender' => $gender,
                 'raw_text' => $rawText,
                 'normalized_text' => $normalizedText,
                 'source' => 'voice',
@@ -206,14 +227,16 @@ class VoiceOrderController extends Controller
     {
         $rawText = Str::of($rawText)->squish()->toString();
         $normalizedText = $this->normalizeText($rawText);
+        $rulesParsed = $this->parseByRules($normalizedText);
+        $aiItems = $this->parseWithValidationModel($normalizedText);
         $parsed = [
-            'items' => $this->parseWithValidationModel($normalizedText),
-            'confidence' => 'ai_primary',
+            'items' => $this->mergeParsedItemsPreferHigherQty($aiItems, $rulesParsed['items']),
+            'confidence' => 'high',
         ];
 
-        if (empty($parsed['items'])) {
-            $parsed = $this->parseByRules($normalizedText);
-            $parsed['confidence'] = empty($parsed['items']) ? 'low' : 'rules_backup';
+        if (empty($aiItems)) {
+            $parsed = $rulesParsed;
+            $parsed['confidence'] = empty($parsed['items']) ? 'low' : 'fallback';
         }
 
         return [
@@ -247,6 +270,31 @@ class VoiceOrderController extends Controller
             $text = preg_replace($pattern, ' ', $text) ?? $text;
         }
 
+        $text = preg_replace('/\b(?:tambah(?:kan)?(?:\s+juga)?|terus|lalu|habis\s+itu|abis\s+itu|sama\s+yang)\b/', ',', $text) ?? $text;
+        $text = preg_replace('/\bteh\s+teh\s+manis\s+dingin\b/', 'teh, teh manis dingin', $text) ?? $text;
+        $text = preg_replace('/\b(\d+)\s+lagi\b/', '$1', $text) ?? $text;
+        $text = preg_replace('/\blagi\b/', ' ', $text) ?? $text;
+        $text = preg_replace('/\b(?:eh|biasa)\b/', ' ', $text) ?? $text;
+
+        $numberWordMap = [
+            'sepuluh' => '10',
+            'sembilan' => '9',
+            'delapan' => '8',
+            'tujuh' => '7',
+            'enam' => '6',
+            'lima' => '5',
+            'empat' => '4',
+            'tiga' => '3',
+            'dua' => '2',
+            'satu' => '1',
+        ];
+
+        foreach ($numberWordMap as $word => $number) {
+            $text = preg_replace('/\b'.$word.'\b/', $number, $text) ?? $text;
+        }
+
+        $text = preg_replace('/\b([a-z0-9]{3,})nya\b/', '$1', $text) ?? $text;
+
         return Str::of($text)
             ->replaceMatches('/[^a-z0-9,\s]/', ' ')
             ->replaceMatches('/\s+/', ' ')
@@ -269,7 +317,7 @@ class VoiceOrderController extends Controller
             'es teh manis' => 'teh manis dingin',
         ];
 
-        $segments = preg_split('/\s*(?:,| dan | sama | plus |\+)\s*/', $normalizedText) ?: [];
+        $segments = preg_split('/\s*(?:,| dan | sama | plus |\+| terus | lalu | tambah(?:kan)?(?: juga)?)\s*/', $normalizedText) ?: [];
 
         $items = [];
 
@@ -437,6 +485,108 @@ class VoiceOrderController extends Controller
 
             return [];
         }
+    }
+
+    /**
+     * @param  array<int, array{name:string,qty:int}>  $primary
+     * @param  array<int, array{name:string,qty:int}>  $secondary
+     * @return array<int, array{name:string,qty:int}>
+     */
+    private function mergeParsedItemsPreferHigherQty(array $primary, array $secondary): array
+    {
+        $merged = [];
+        $primaryNames = [];
+
+        foreach ($primary as $item) {
+            $name = Str::of((string) ($item['name'] ?? ''))->lower()->squish()->toString();
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+
+            if ($name === '') {
+                continue;
+            }
+
+            $primaryNames[] = $name;
+
+            if (! isset($merged[$name])) {
+                $merged[$name] = $qty;
+                continue;
+            }
+
+            $merged[$name] = max($merged[$name], $qty);
+        }
+
+        foreach ($secondary as $item) {
+            $name = Str::of((string) ($item['name'] ?? ''))->lower()->squish()->toString();
+            $qty = max(1, (int) ($item['qty'] ?? 1));
+
+            if ($name === '') {
+                continue;
+            }
+
+            $wordCount = str_word_count($name);
+            $containsPrimaryCount = 0;
+            foreach ($primaryNames as $primaryName) {
+                if ($primaryName !== '' && str_contains($name, $primaryName)) {
+                    $containsPrimaryCount++;
+                }
+            }
+
+            // Drop noisy rule segments that concatenate many detected primary items.
+            if ($wordCount >= 5 && $containsPrimaryCount >= 2) {
+                continue;
+            }
+
+            $targetName = $name;
+            if (! isset($merged[$targetName])) {
+                $shorthandMatches = array_values(array_filter(
+                    $primaryNames,
+                    fn (string $primaryName): bool => $primaryName === $name || Str::endsWith($primaryName, ' '.$name)
+                ));
+
+                if (count($shorthandMatches) === 1) {
+                    $targetName = $shorthandMatches[0];
+                }
+            }
+
+            if (! isset($merged[$targetName])) {
+                $merged[$targetName] = $qty;
+                continue;
+            }
+
+            if ($targetName !== $name) {
+                $merged[$targetName] += $qty;
+                continue;
+            }
+
+            $merged[$targetName] = max($merged[$targetName], $qty);
+        }
+
+        foreach (array_keys($merged) as $name) {
+            if (! isset($merged[$name]) || str_word_count($name) !== 1) {
+                continue;
+            }
+
+            $specificMatches = array_values(array_filter(
+                array_keys($merged),
+                fn (string $other): bool => $other !== $name && Str::endsWith($other, ' '.$name)
+            ));
+
+            if (count($specificMatches) !== 1) {
+                continue;
+            }
+
+            $targetName = $specificMatches[0];
+            $merged[$targetName] += $merged[$name];
+            unset($merged[$name]);
+        }
+
+        return collect($merged)
+            ->map(fn (int $qty, string $name): array => [
+                'name' => $name,
+                'qty' => $qty,
+            ])
+            ->values()
+            ->all();
     }
 
     private function validateItems(array $parsedItems): array

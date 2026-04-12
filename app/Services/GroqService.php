@@ -47,8 +47,9 @@ Extract menu items from Indonesian customer text.
 Return JSON only, with this exact shape:
 [{"name":"menu name","qty":1}]
 Rules:
-- Keep item names short and normalized.
+- Keep item names exactly aligned to spoken specific variants when present (example: "teh manis dingin" must stay "teh manis dingin", not "teh").
 - qty must be integer >= 1.
+- Capture additive intents such as "tambah", "satu lagi", "yang ... satu lagi" by increasing qty or adding new items.
 - If no clear item, return []
 Text: {$text}
 PROMPT;

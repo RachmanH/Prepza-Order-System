@@ -29,6 +29,11 @@
                  x-transition:leave-end="opacity-0 scale-95">
                 <h3 class="text-lg font-bold text-slate-900">Konfirmasi Pesanan</h3>
                 <p class="mt-2 text-sm text-slate-600">Silakan review item pesanan Anda:</p>
+
+                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <p><span class="font-semibold text-slate-800">Nama:</span> <span x-text="customerName || '-'">-</span></p>
+                    <p class="mt-1"><span class="font-semibold text-slate-800">Jenis kelamin:</span> <span x-text="genderLabel(customerGender)">-</span></p>
+                </div>
                 
                 <div class="mt-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <template x-for="item in confirmingItems" :key="item.name + item.qty">
@@ -129,6 +134,22 @@
                         <h3 class="text-base font-bold text-slate-900">Voice Input</h3>
                         <p class="mt-1 text-xs text-slate-500">Klik mic, bicara, lalu submit order.</p>
 
+                        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                                <label for="customer_name" class="text-xs font-semibold text-slate-600">Nama Pelanggan</label>
+                                <input id="customer_name" x-model="customerName" type="text" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500" placeholder="Masukkan nama pelanggan">
+                            </div>
+                            <div>
+                                <label for="customer_gender" class="text-xs font-semibold text-slate-600">Jenis Kelamin (opsional)</label>
+                                <select id="customer_gender" x-model="customerGender" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
+                                    <option value="">- Tidak diisi -</option>
+                                    <option value="male">Laki-laki</option>
+                                    <option value="female">Perempuan</option>
+                                    <option value="other">Lainnya</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <div class="mt-5 flex flex-wrap items-center gap-4">
                             <button type="button"
                                 @click="toggleListening('customer')"
@@ -158,22 +179,10 @@
 
                         <div class="mt-4">
                             <label for="raw_text" class="text-xs font-semibold text-slate-600">Transkrip / Input Manual</label>
-                            <textarea id="raw_text" x-model="rawText" rows="3" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: saya mau nasgor sama teh anget"></textarea>
+                            <textarea id="raw_text" x-model="rawText" @input="scheduleDraftPreview()" rows="3" class="mt-1 w-full rounded-xl border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: saya mau nasgor sama teh anget"></textarea>
                         </div>
 
-                        <div class="mt-4 flex flex-wrap gap-2">
-                            <button type="button" @click="submitOrder()" :disabled="submitting || !rawText.trim()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-                                <span x-text="submitting ? 'Memproses...' : 'Proses Order'"></span>
-                            </button>
-                            <button type="button" @click="resetState()" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Reset</button>
-                        </div>
-
-                        <div class="mt-5 min-h-[92px] rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <p class="text-xs font-semibold text-slate-600">Status</p>
-                            <p class="mt-1 text-sm" :class="statusTone" x-text="statusMessage || 'Belum ada proses.'"></p>
-                        </div>
-
-                        <div class="mt-5">
+                        <div class="mt-4">
                             <p class="text-xs font-semibold text-slate-600">Makanan terpilih (berdasarkan kata user)</p>
                             <div class="mt-2 flex min-h-[44px] flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2">
                                 <template x-if="detectedItems.length === 0">
@@ -184,11 +193,31 @@
                                 </template>
                             </div>
                         </div>
+
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button type="button" @click="submitOrder()" :disabled="submitting || !rawText.trim() || !customerName.trim()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                                <span x-text="submitting ? 'Memproses...' : 'Proses Order'"></span>
+                            </button>
+                            <button type="button" @click="resetState()" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Reset</button>
+                        </div>
+
+                        <div class="mt-5 min-h-[92px] rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p class="text-xs font-semibold text-slate-600">Status</p>
+                            <p class="mt-1 text-sm" :class="statusTone" x-text="statusMessage || 'Belum ada proses.'"></p>
+                        </div>
+
                     </main>
 
                     <aside class="lg:col-span-3 rounded-2xl border border-slate-200 bg-slate-900 p-4 text-white">
                         <h3 class="text-base font-bold">Antrian</h3>
                         <p class="mt-1 text-xs text-slate-300">Update dari response backend</p>
+
+                        <div class="mt-4 rounded-xl bg-white/10 p-4">
+                            <p class="text-xs text-slate-300">Nama Pelanggan</p>
+                            <p class="mt-1 text-sm font-semibold" x-text="lastOrderCustomerName || '-'" ></p>
+                            <p class="mt-2 text-xs text-slate-300">Jenis Kelamin</p>
+                            <p class="mt-1 text-sm font-semibold" x-text="genderLabel(lastOrderCustomerGender)"></p>
+                        </div>
 
                         <div class="mt-4 rounded-xl bg-white/10 p-4">
                             <p class="text-xs text-slate-300">Nomor Antrian</p>
@@ -215,105 +244,6 @@
                 </div>
             </section>
 
-            <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h3 class="text-base font-bold text-slate-900">Panel Kasir</h3>
-                        <p class="text-xs text-slate-500">Konfirmasi, batalkan, atau tambah item suara ke order aktif.</p>
-                    </div>
-                    <button type="button" @click="fetchCashierOrders()" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        Refresh Antrian
-                    </button>
-                </div>
-
-                <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
-                    <div class="lg:col-span-7 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <div class="max-h-72 overflow-auto">
-                            <table class="min-w-full text-sm">
-                                <thead>
-                                    <tr class="text-left text-xs uppercase tracking-wide text-slate-500">
-                                        <th class="px-2 py-2">Queue</th>
-                                        <th class="px-2 py-2">Order</th>
-                                        <th class="px-2 py-2">Status</th>
-                                        <th class="px-2 py-2">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <template x-if="loadingCashierOrders">
-                                        <tr>
-                                            <td class="px-2 py-3 text-slate-500" colspan="4">Memuat daftar order...</td>
-                                        </tr>
-                                    </template>
-
-                                    <template x-if="!loadingCashierOrders && cashierOrders.length === 0">
-                                        <tr>
-                                            <td class="px-2 py-3 text-slate-500" colspan="4">Belum ada order aktif.</td>
-                                        </tr>
-                                    </template>
-
-                                    <template x-for="order in cashierOrders" :key="order.id">
-                                        <tr class="cursor-pointer border-t border-slate-200" @click="selectCashierOrder(order)"
-                                            :class="selectedOrderId === order.id ? 'bg-cyan-100/70' : 'hover:bg-slate-100'">
-                                            <td class="px-2 py-2 font-semibold text-slate-700" x-text="order.queue ? order.queue.queue_number : '-'" ></td>
-                                            <td class="px-2 py-2">
-                                                <p class="font-semibold text-slate-800" x-text="order.order_code"></p>
-                                                <p class="text-xs text-slate-500" x-text="`#${order.id}`"></p>
-                                            </td>
-                                            <td class="px-2 py-2">
-                                                <span class="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700" x-text="order.status"></span>
-                                            </td>
-                                            <td class="px-2 py-2 font-semibold text-slate-700" x-text="formatCurrency(order.total_amount)"></td>
-                                        </tr>
-                                    </template>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Detail Order Terpilih</p>
-                        <template x-if="!selectedCashierOrder()">
-                            <p class="mt-3 text-sm text-slate-500">Pilih order dari tabel untuk aksi kasir.</p>
-                        </template>
-
-                        <template x-if="selectedCashierOrder()">
-                            <div class="mt-3 space-y-3">
-                                <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                    <p class="text-sm font-semibold text-slate-800" x-text="selectedCashierOrder().order_code"></p>
-                                    <ul class="mt-2 space-y-2 text-xs text-slate-700">
-                                        <template x-for="item in selectedCashierOrder().items" :key="item.id">
-                                            <li class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white p-2">
-                                                <span x-text="`${item.item_name} x${item.qty}`"></span>
-                                                <div class="flex items-center gap-1">
-                                                    <button type="button" class="h-6 w-6 rounded border border-slate-300 text-slate-700" :disabled="cashierBusy" @click="updateCashierItemQty(item, -1)">-</button>
-                                                    <button type="button" class="h-6 w-6 rounded border border-slate-300 text-slate-700" :disabled="cashierBusy" @click="updateCashierItemQty(item, 1)">+</button>
-                                                    <button type="button" class="rounded border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600" :disabled="cashierBusy" @click="removeCashierItem(item)">Hapus</button>
-                                                </div>
-                                            </li>
-                                        </template>
-                                    </ul>
-                                </div>
-
-                                <div class="flex flex-wrap gap-2">
-                                    <button type="button" @click="confirmSelectedOrder()" :disabled="cashierBusy" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Konfirmasi</button>
-                                    <button type="button" @click="cancelSelectedOrder()" :disabled="cashierBusy" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Batalkan</button>
-                                </div>
-
-                                <div class="rounded-lg border border-slate-200 p-3">
-                                    <p class="text-xs font-semibold text-slate-600">Tambah Item Lagi (Suara)</p>
-                                    <div class="mt-2 flex flex-wrap items-center gap-2">
-                                        <button type="button" @click="toggleListening('cashier')" :disabled="!speechSupported" class="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" x-text="isListening && listeningTarget === 'cashier' ? 'Stop Mic Kasir' : 'Mic Kasir'"></button>
-                                    </div>
-                                    <textarea x-model="cashierAppendText" rows="2" class="mt-2 w-full rounded-lg border-slate-300 text-xs focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: tambahkan 1 teh manis dingin"></textarea>
-                                    <button type="button" @click="appendVoiceToSelected()" :disabled="cashierBusy || !cashierAppendText.trim()" class="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tambahkan ke Order</button>
-                                </div>
-
-                                <p class="text-xs" :class="cashierTone" x-text="cashierMessage"></p>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-            </section>
         </div>
 
         <script>
@@ -340,6 +270,12 @@
                     cashierBusy: false,
                     cashierMessage: '',
                     cashierTone: 'text-slate-600',
+                    customerName: '',
+                    customerGender: '',
+                    lastOrderCustomerName: '',
+                    lastOrderCustomerGender: '',
+                    draftPreviewTimer: null,
+                    draftPreviewRequestId: 0,
                     banners: [
                         'Promo dummy: Diskon 20% untuk semua minuman panas di jam 08:00-10:00.',
                         'Banner dummy: Paket hemat nasi goreng + teh tersedia hari ini.',
@@ -359,11 +295,9 @@
 
                     init() {
                         this.fetchMenus();
-                        this.fetchCashierOrders();
                         this.initSpeech();
                         this.rotateBanner();
                         this.setupKeyboardListener();
-                        setInterval(() => this.fetchCashierOrders(), 5000);
                     },
 
                     setupKeyboardListener() {
@@ -444,7 +378,7 @@
                                 }
 
                                 this.rawText = this.customerSpeechCommitted.trim();
-                                this.submitOrder();
+                                this.scheduleDraftPreview(true);
                             }
                         };
 
@@ -526,6 +460,7 @@
                         }
 
                         this.rawText = `${this.customerSpeechCommitted} ${this.speechInterimCurrent}`.trim();
+                        this.scheduleDraftPreview();
                     },
 
                     toggleListening(target = 'customer') {
@@ -549,9 +484,7 @@
                             this.cashierSpeechCommitted = '';
                             this.cashierAppendText = '';
                         } else {
-                            this.customerSpeechCommitted = '';
-                            this.rawText = '';
-                            this.detectedItems = [];
+                            this.customerSpeechCommitted = String(this.rawText || '').trim();
                         }
 
                         this.shouldKeepListening = true;
@@ -750,6 +683,78 @@
                         }
                     },
 
+                    scheduleDraftPreview(force = false) {
+                        if (this.listeningTarget === 'cashier') {
+                            return;
+                        }
+
+                        if (this.draftPreviewTimer) {
+                            clearTimeout(this.draftPreviewTimer);
+                            this.draftPreviewTimer = null;
+                        }
+
+                        if (force) {
+                            this.refreshDraftPreview();
+                            return;
+                        }
+
+                        this.draftPreviewTimer = setTimeout(() => {
+                            this.refreshDraftPreview();
+                        }, 250);
+                    },
+
+                    async refreshDraftPreview() {
+                        const currentRawText = String(this.rawText || '').trim();
+
+                        if (!currentRawText) {
+                            this.detectedItems = [];
+                            if (!this.showConfirmModal) {
+                                this.confirmingItems = [];
+                            }
+                            return;
+                        }
+
+                        const requestId = ++this.draftPreviewRequestId;
+                        const preview = await this.requestValidatedItems(currentRawText);
+
+                        if (requestId !== this.draftPreviewRequestId) {
+                            return;
+                        }
+
+                        if (preview.status === 'invalid') {
+                            this.detectedItems = [];
+                            if (!this.showConfirmModal) {
+                                this.confirmingItems = [];
+                            }
+                            this.statusMessage = preview.message || 'Pesanan tidak dikenali, silakan ulangi.';
+                            this.statusTone = 'text-rose-600';
+                            return;
+                        }
+
+                        this.detectedItems = (preview.items || []).map((item) => ({
+                            name: String(item.name || '').toLowerCase(),
+                            qty: Math.max(1, Number(item.qty || 1)),
+                        }));
+
+                        if (!this.showConfirmModal) {
+                            this.confirmingItems = [...this.detectedItems];
+                        }
+
+                        if (this.detectedItems.length === 0) {
+                            this.statusMessage = 'Pesanan belum berisi item yang valid.';
+                            this.statusTone = 'text-amber-600';
+                            return;
+                        }
+
+                        if (preview.status === 'partial') {
+                            this.statusMessage = preview.message || 'Sebagian menu tidak tersedia, hanya item valid yang ditampilkan.';
+                            this.statusTone = 'text-amber-600';
+                        } else {
+                            this.statusMessage = preview.message || 'Pesanan siap dikonfirmasi.';
+                            this.statusTone = 'text-emerald-600';
+                        }
+                    },
+
                     normalizeNumberWords(segment) {
                         const map = {
                             sepuluh: '10',
@@ -812,6 +817,12 @@
                             return;
                         }
 
+                        if (!this.customerName.trim()) {
+                            this.statusMessage = 'Nama pelanggan wajib diisi sebelum proses order.';
+                            this.statusTone = 'text-rose-600';
+                            return;
+                        }
+
                         if (this.showConfirmModal && this.confirmingItems.length > 0) {
                             const handledCommand = await this.applyVoiceCommandToConfirmingItems(this.rawText);
 
@@ -820,35 +831,17 @@
                             }
                         }
 
+                        if (this.draftPreviewTimer) {
+                            clearTimeout(this.draftPreviewTimer);
+                            this.draftPreviewTimer = null;
+                        }
+
                         this.statusMessage = 'Menganalisa pesanan...';
                         this.statusTone = 'text-slate-600';
-
-                        const preview = await this.requestValidatedItems(this.rawText);
-
-                        if (preview.status === 'invalid') {
-                            this.detectedItems = [];
-                            this.statusMessage = preview.message || 'Pesanan tidak dikenali, silakan ulangi.';
-                            this.statusTone = 'text-rose-600';
-                            return;
-                        }
-
-                        this.detectedItems = (preview.items || []).map((item) => ({
-                            name: String(item.name || '').toLowerCase(),
-                            qty: Math.max(1, Number(item.qty || 1)),
-                        }));
+                        await this.refreshDraftPreview();
 
                         if (this.detectedItems.length === 0) {
-                            this.statusMessage = 'Pesanan belum berisi item yang valid.';
-                            this.statusTone = 'text-amber-600';
                             return;
-                        }
-
-                        if (preview.status === 'partial') {
-                            this.statusMessage = preview.message || 'Sebagian menu tidak tersedia, hanya item valid yang ditampilkan.';
-                            this.statusTone = 'text-amber-600';
-                        } else {
-                            this.statusMessage = preview.message || 'Pesanan siap dikonfirmasi.';
-                            this.statusTone = 'text-emerald-600';
                         }
 
                         this.confirmingItems = [...this.detectedItems];
@@ -1146,6 +1139,8 @@
                             const confirmedRawText = this.buildRawTextFromConfirmingItems();
                             const response = await axios.post('/api/orders/voice', {
                                 raw_text: confirmedRawText,
+                                customer_name: this.customerName,
+                                gender: this.customerGender || null,
                             });
 
                             const data = response.data;
@@ -1153,11 +1148,12 @@
                             this.finalItems = data.items || [];
                             this.queueNumber = data.queue_number || null;
                             this.orderCode = data.order_code || '';
+                            this.lastOrderCustomerName = this.customerName;
+                            this.lastOrderCustomerGender = this.customerGender;
                             this.statusMessage = data.message || 'Order berhasil dibuat.';
                             this.statusTone = 'text-emerald-600';
                             this.closeConfirmModal();
-                            this.resetState();
-                            await this.fetchCashierOrders();
+                            this.clearDraftState();
                         } catch (error) {
                             const data = error?.response?.data || {};
 
@@ -1177,14 +1173,45 @@
                     },
 
                     resetState() {
-                        this.rawText = '';
-                        this.detectedItems = [];
-                        this.confirmingItems = [];
+                        this.clearDraftState();
                         this.finalItems = [];
                         this.queueNumber = null;
                         this.orderCode = '';
+                        this.lastOrderCustomerName = '';
+                        this.lastOrderCustomerGender = '';
                         this.statusMessage = '';
                         this.statusTone = 'text-slate-600';
+                    },
+
+                    clearDraftState() {
+                        if (this.draftPreviewTimer) {
+                            clearTimeout(this.draftPreviewTimer);
+                            this.draftPreviewTimer = null;
+                        }
+
+                        this.rawText = '';
+                        this.detectedItems = [];
+                        this.confirmingItems = [];
+                        this.customerName = '';
+                        this.customerGender = '';
+                    },
+
+                    genderLabel(value) {
+                        const normalized = String(value || '').toLowerCase();
+
+                        if (normalized === 'male') {
+                            return 'Laki-laki';
+                        }
+
+                        if (normalized === 'female') {
+                            return 'Perempuan';
+                        }
+
+                        if (normalized === 'other') {
+                            return 'Lainnya';
+                        }
+
+                        return '-';
                     },
 
                     rotateBanner() {

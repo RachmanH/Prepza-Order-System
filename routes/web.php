@@ -18,4 +18,8 @@ Route::middleware([
     Route::get('/order-kiosk', function () {
         return view('order-kiosk');
     })->name('order.kiosk');
+
+    Route::get('/cashier-panel', function () {
+        return view('cashier-panel');
+    })->name('cashier.panel');
 });
