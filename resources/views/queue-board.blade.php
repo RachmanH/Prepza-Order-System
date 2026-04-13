@@ -28,7 +28,7 @@
                 <div class="mt-4 flex gap-3 overflow-x-auto pb-1">
                     <div class="min-w-[220px] flex-1 rounded-xl border border-gray-200 bg-gray-50 p-4">
                         <p class="text-xs uppercase tracking-wide text-gray-500">Sedang Dilayani</p>
-                        <p class="mt-2 text-4xl font-bold text-indigo-600" x-text="current ? queueLabel(current.queue_number) : '-' "></p>
+                        <p class="mt-2 text-4xl font-bold text-indigo-600" x-text="current ? queueLabel(current.display_queue_number ?? current.queue_number) : '-' "></p>
                     </div>
                     <div class="min-w-[220px] flex-1 rounded-xl border border-gray-200 bg-gray-50 p-4">
                         <p class="text-xs uppercase tracking-wide text-gray-500">Antrian Menunggu</p>
@@ -46,7 +46,7 @@
                     <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                         <p class="text-xs uppercase tracking-wide text-gray-500">Nomor Antrian Aktif</p>
                         <div class="mt-4 rounded-2xl bg-indigo-50 p-6 text-center">
-                            <p class="text-7xl font-bold text-indigo-700" x-text="current ? queueLabel(current.queue_number) : '-' "></p>
+                            <p class="text-7xl font-bold text-indigo-700" x-text="current ? queueLabel(current.display_queue_number ?? current.queue_number) : '-' "></p>
                             <p class="mt-3 text-sm font-semibold text-gray-700" x-text="current ? current.order_code : 'Belum ada pesanan aktif'"></p>
                             <p class="text-sm text-gray-500" x-text="current?.customer_name || 'Pelanggan Umum'"></p>
                         </div>
@@ -61,13 +61,13 @@
                             <template x-for="(item, idx) in upcoming" :key="item.order_id">
                                 <div class="rounded-xl border border-gray-200 bg-gray-50 p-3">
                                     <p class="text-[11px] uppercase tracking-wide text-gray-500" x-text="`Antrian ${idx + 1}`"></p>
-                                    <p class="mt-2 text-3xl font-bold text-gray-800" x-text="queueLabel(item.queue_number)"></p>
+                                    <p class="mt-2 text-3xl font-bold text-gray-800" x-text="queueLabel(item.display_queue_number ?? item.queue_number)"></p>
                                     <p class="truncate text-xs text-gray-500" x-text="item.customer_name || 'Pelanggan Umum'"></p>
                                     <button
                                         type="button"
                                         class="mt-2 w-full rounded-md border border-indigo-200 bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                                         :disabled="!audioEnabled"
-                                        @click="replayQueueCall(item.queue_number)"
+                                        @click="replayQueueCall(item.display_queue_number ?? item.queue_number, item.customer_name)"
                                     >
                                         Replay
                                     </button>
@@ -103,7 +103,7 @@
 
                     <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                         <p class="text-xs uppercase tracking-wide text-gray-500">Audio Pengumuman</p>
-                        <p class="mt-2 text-sm text-gray-600">Pengumuman otomatis: Pesanan nomor antrian sekian sudah selesai.</p>
+                        <p class="mt-2 text-sm text-gray-600">Pengumuman otomatis: nama pelanggan dan nomor antrian dipanggil.</p>
                         <div class="mt-4 flex flex-wrap gap-2">
                             <button type="button" @click="toggleAudio()" class="rounded-lg px-3 py-2 text-xs font-semibold"
                                     :class="audioEnabled ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white'"
@@ -134,8 +134,8 @@
                                     type="button"
                                     class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
                                     :disabled="!audioEnabled"
-                                    @click="replayDoneAnnouncement(item.queue_number)"
-                                    x-text="queueLabel(item.queue_number)">
+                                    @click="replayDoneAnnouncement(item.display_queue_number ?? item.queue_number, item.customer_name)"
+                                    x-text="queueLabel(item.display_queue_number ?? item.queue_number)">
                                 </button>
                             </template>
                         </div>
@@ -243,17 +243,21 @@
                             return;
                         }
 
-                        this.replayQueueCall(this.current.queue_number);
+                        this.replayQueueCall(this.current.display_queue_number ?? this.current.queue_number, this.current.customer_name);
                     },
 
-                    replayQueueCall(queueNumber, cancelPrevious = true) {
+                    replayQueueCall(queueNumber, customerName = null, cancelPrevious = true) {
                         const label = this.queueLabel(queueNumber);
-                        this.speakText(`Nomor antrian ${label}, silakan menuju kasir.`, cancelPrevious);
+                        const nameText = String(customerName || '').trim();
+                        const prefix = nameText ? `${nameText}, ` : '';
+                        this.speakText(`${prefix}nomor antrian ${label}, silakan menuju kasir.`, cancelPrevious);
                     },
 
-                    replayDoneAnnouncement(queueNumber, cancelPrevious = true) {
+                    replayDoneAnnouncement(queueNumber, customerName = null, cancelPrevious = true) {
                         const label = this.queueLabel(queueNumber);
-                        this.speakText(`Pesanan nomor antrian ${label} sudah selesai.`, cancelPrevious);
+                        const nameText = String(customerName || '').trim();
+                        const prefix = nameText ? `${nameText}, ` : '';
+                        this.speakText(`${prefix}pesanan nomor antrian ${label} sudah selesai.`, cancelPrevious);
                     },
 
                     replayLastAnnouncement() {
@@ -306,7 +310,7 @@
 
                         let shouldCancel = true;
                         for (const doneItem of newDone.reverse()) {
-                            this.replayDoneAnnouncement(doneItem.queue_number, shouldCancel);
+                            this.replayDoneAnnouncement(doneItem.display_queue_number ?? doneItem.queue_number, doneItem.customer_name, shouldCancel);
                             shouldCancel = false;
                         }
                     },

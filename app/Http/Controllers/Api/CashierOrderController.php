@@ -26,6 +26,7 @@ class CashierOrderController extends Controller
         $queueRows = Order::query()
             ->join('order_queues as oq', 'oq.order_id', '=', 'orders.id')
             ->whereIn('orders.status', ['waiting', 'processing', 'done'])
+            ->whereDate('orders.created_at', today())
             ->orderByRaw("CASE WHEN orders.status = 'processing' THEN 0 WHEN orders.status = 'waiting' THEN 1 ELSE 2 END")
             ->orderBy('oq.queue_number')
             ->get([
@@ -40,9 +41,15 @@ class CashierOrderController extends Controller
                 'oq.done_at',
             ]);
 
-        $effectiveRows = $queueRows->map(function ($row) {
+        $displayQueueMap = [];
+        foreach ($queueRows->sortBy('queue_number')->values() as $index => $row) {
+            $displayQueueMap[(int) $row->queue_number] = $index + 1;
+        }
+
+        $effectiveRows = $queueRows->map(function ($row) use ($displayQueueMap) {
             $effectiveStatus = $row->external_status === 'done' ? 'done' : $row->status;
             $row->effective_status = $effectiveStatus;
+            $row->display_queue_number = $displayQueueMap[(int) $row->queue_number] ?? (int) $row->queue_number;
 
             return $row;
         });
@@ -57,6 +64,7 @@ class CashierOrderController extends Controller
             ->map(fn ($row): array => [
                 'order_id' => $row->id,
                 'queue_number' => $row->queue_number,
+                'display_queue_number' => $row->display_queue_number,
                 'order_code' => $row->order_code,
                 'customer_name' => $row->customer_name,
             ])
@@ -70,6 +78,8 @@ class CashierOrderController extends Controller
             ->map(fn ($row): array => [
                 'order_id' => $row->id,
                 'queue_number' => $row->queue_number,
+                'display_queue_number' => $row->display_queue_number,
+                'customer_name' => $row->customer_name,
                 'done_at' => optional($row->done_at)->toIso8601String(),
                 'external_updated_at' => optional($row->external_updated_at)->toIso8601String(),
                 'announce_key' => sprintf(
@@ -87,6 +97,7 @@ class CashierOrderController extends Controller
                 'current' => $current ? [
                     'order_id' => $current->id,
                     'queue_number' => $current->queue_number,
+                    'display_queue_number' => $current->display_queue_number,
                     'order_code' => $current->order_code,
                     'customer_name' => $current->customer_name,
                     'status' => $current->effective_status,
@@ -254,6 +265,25 @@ class CashierOrderController extends Controller
         }
 
         DB::transaction(function () use ($order, $payload): void {
+            if (($payload['queue_status'] ?? null) === 'processing') {
+                $otherProcessingOrderIds = Order::query()
+                    ->where('id', '!=', $order->id)
+                    ->whereDate('created_at', $order->created_at->toDateString())
+                    ->where('status', 'processing')
+                    ->pluck('id');
+
+                if ($otherProcessingOrderIds->isNotEmpty()) {
+                    Order::query()
+                        ->whereIn('id', $otherProcessingOrderIds)
+                        ->update(['status' => 'waiting']);
+
+                    DB::table('order_queues')
+                        ->whereIn('order_id', $otherProcessingOrderIds)
+                        ->where('status', 'processing')
+                        ->update(['status' => 'waiting']);
+                }
+            }
+
             $orderData = [
                 'external_updated_at' => now(),
             ];
