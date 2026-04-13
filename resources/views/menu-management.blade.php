@@ -17,18 +17,9 @@
                     <p class="text-xs text-slate-500">Kelola kategori menu</p>
                 </div>
 
-                <!-- Category Form -->
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                    <input x-model="categoryForm.name" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Nama kategori" />
-                    <textarea x-model="categoryForm.description" rows="2" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Deskripsi kategori (opsional)"></textarea>
-                    <div class="flex items-end gap-2">
-                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
-                            <input x-model="categoryForm.is_active" type="checkbox" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
-                            Aktif
-                        </label>
-                        <button type="button" @click="submitCategory()" :disabled="categoryBusy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" x-text="editingCategoryId ? 'Update Kategori' : 'Tambah Kategori'"></button>
-                        <button type="button" x-show="editingCategoryId" @click="resetCategoryForm()" :disabled="categoryBusy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal Edit</button>
-                    </div>
+                <div class="flex items-center justify-between gap-3">
+                    <button type="button" @click="openCreateCategoryModal()" :disabled="categoryBusy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tambah Kategori</button>
+                    <p class="text-xs text-slate-500">Aksi tambah, edit, dan hapus kategori menggunakan modal.</p>
                 </div>
 
                 <p class="text-xs" :class="categoryMessageTone" x-text="categoryMessage"></p>
@@ -70,8 +61,8 @@
                                     </td>
                                     <td class="px-3 py-2">
                                         <div class="flex flex-wrap gap-1">
-                                            <button type="button" @click="startEditCategory(category)" :disabled="categoryBusy" class="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:opacity-50">Edit</button>
-                                            <button type="button" @click="deleteCategory(category)" :disabled="categoryBusy || (category.menus_count || 0) > 0" class="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50" :title="(category.menus_count || 0) > 0 ? 'Tidak bisa hapus kategori yang masih memiliki menu' : ''">Hapus</button>
+                                            <button type="button" @click="openEditCategoryModal(category)" :disabled="categoryBusy" class="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:opacity-50">Edit</button>
+                                            <button type="button" @click="openDeleteCategoryModal(category)" :disabled="categoryBusy || (category.menus_count || 0) > 0" class="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50" :title="(category.menus_count || 0) > 0 ? 'Tidak bisa hapus kategori yang masih memiliki menu' : ''">Hapus</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -83,39 +74,21 @@
 
             <!-- MENUS SECTION -->
             <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 space-y-4">
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                    <input x-model="form.name" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Nama menu" />
-                    <select x-model="form.category_id" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500">
-                        <option value="">-- Pilih Kategori --</option>
-                        <template x-for="category in categories" :key="category.id">
-                            <option :value="category.id" x-text="category.name"></option>
-                        </template>
-                    </select>
-                    <input x-model="form.image_url" type="url" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="URL gambar eksternal (opsional)" />
-                    <textarea x-model="form.description" rows="2" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Deskripsi singkat menu"></textarea>
-                    <div>
-                        <input type="file" @change="onImageSelected($event)" accept="image/png,image/jpeg,image/jpg,image/webp" class="block w-full rounded-lg border border-slate-300 bg-white text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-700">
-                        <p class="mt-1 text-[11px] text-slate-500">Upload gambar lokal (jpg/png/webp, max 3MB)</p>
-                    </div>
-                    <input x-model="form.price" type="number" min="0" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Harga" />
-                    <input x-model="form.aliases" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Alias (pisah koma)" />
-                    <div class="flex items-center gap-2">
-                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
-                            <input x-model="form.is_active" type="checkbox" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
-                            Tersedia
-                        </label>
-                        <label x-show="editingId" class="inline-flex items-center gap-2 text-xs text-rose-600">
-                            <input x-model="form.remove_image" type="checkbox" class="rounded border-rose-300 text-rose-600 focus:ring-rose-500" />
-                            Hapus gambar saat simpan
-                        </label>
-                        <button type="button" @click="submitForm()" :disabled="busy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" x-text="editingId ? 'Update Menu' : 'Tambah Menu'"></button>
-                        <button type="button" x-show="editingId" @click="resetForm()" :disabled="busy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal Edit</button>
-                    </div>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-slate-900">Manajemen Menu</h3>
+                    <p class="text-xs text-slate-500">Kelola Data Menu</p>
                 </div>
-
-                <div x-show="previewImageUrl" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p class="text-xs font-semibold text-slate-600">Preview Gambar</p>
-                    <img :src="previewImageUrl" alt="Preview menu" class="mt-2 h-28 w-28 rounded-lg border border-slate-200 object-cover" loading="lazy">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <button type="button" @click="openCreateMenuModal()" :disabled="busy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tambah Menu</button>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-semibold text-slate-600">Filter Kategori</label>
+                        <select x-model="selectedCategoryFilter" class="rounded-lg border-slate-300 text-xs focus:border-cyan-500 focus:ring-cyan-500">
+                            <option value="all">Semua Kategori</option>
+                            <template x-for="category in categories" :key="`filter-${category.id}`">
+                                <option :value="String(category.id)" x-text="category.name"></option>
+                            </template>
+                        </select>
+                    </div>
                 </div>
 
                 <p class="text-xs" :class="messageTone" x-text="message"></p>
@@ -141,13 +114,13 @@
                                 </tr>
                             </template>
 
-                            <template x-if="!loading && menus.length === 0">
+                            <template x-if="!loading && filteredMenus().length === 0">
                                 <tr>
                                     <td colspan="8" class="px-3 py-3 text-slate-500">Belum ada menu.</td>
                                 </tr>
                             </template>
 
-                            <template x-for="menu in menus" :key="menu.id">
+                            <template x-for="menu in filteredMenus()" :key="menu.id">
                                 <tr class="border-t border-slate-200">
                                     <td class="px-3 py-2">
                                         <img x-show="menu.image_url" :src="menu.image_url" alt="Gambar menu" class="h-12 w-12 rounded-md border border-slate-200 object-cover" loading="lazy">
@@ -170,10 +143,10 @@
                                     </td>
                                     <td class="px-3 py-2">
                                         <div class="flex flex-wrap gap-1">
-                                            <button type="button" @click="startEdit(menu)" :disabled="busy" class="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:opacity-50">Edit</button>
+                                            <button type="button" @click="openEditMenuModal(menu)" :disabled="busy" class="rounded border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 disabled:opacity-50">Edit</button>
                                             <button type="button" @click="toggleMenu(menu)" :disabled="busy" class="rounded border border-amber-300 px-2 py-1 text-[11px] font-semibold text-amber-700 disabled:opacity-50">Toggle</button>
                                             <button type="button" @click="removeMenuImage(menu)" :disabled="busy || !menu.image_url" class="rounded border border-orange-300 px-2 py-1 text-[11px] font-semibold text-orange-700 disabled:opacity-50">Hapus Gambar</button>
-                                            <button type="button" @click="deleteMenu(menu)" :disabled="busy" class="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Hapus</button>
+                                            <button type="button" @click="openDeleteMenuModal(menu)" :disabled="busy" class="rounded border border-rose-300 px-2 py-1 text-[11px] font-semibold text-rose-700 disabled:opacity-50">Hapus</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -184,13 +157,114 @@
             </section>
         </div>
 
+        <!-- Category Create/Edit Modal -->
+        <div x-show="showCategoryModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" style="display: none;">
+            <div class="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-slate-900" x-text="categoryModalMode === 'edit' ? 'Edit Kategori' : 'Tambah Kategori'"></h3>
+                    <button type="button" @click="closeCategoryModal()" class="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700">Tutup</button>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3">
+                    <input x-model="categoryForm.name" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Nama kategori" />
+                    <textarea x-model="categoryForm.description" rows="3" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Deskripsi kategori (opsional)"></textarea>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                        <input x-model="categoryForm.is_active" type="checkbox" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                        Aktif
+                    </label>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="submitCategoryModal()" :disabled="categoryBusy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" x-text="categoryModalMode === 'edit' ? 'Simpan Perubahan' : 'Tambah Kategori'"></button>
+                    <button type="button" @click="closeCategoryModal()" :disabled="categoryBusy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Delete Modal -->
+        <div x-show="showDeleteCategoryModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" style="display: none;">
+            <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 space-y-4">
+                <h3 class="text-lg font-bold text-slate-900">Hapus Kategori</h3>
+                <p class="text-sm text-slate-600">Yakin ingin menghapus kategori <span class="font-semibold" x-text="categoryToDelete?.name || '-'" ></span>?</p>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="confirmDeleteCategory()" :disabled="categoryBusy" class="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50">Ya, Hapus</button>
+                    <button type="button" @click="showDeleteCategoryModal = false" :disabled="categoryBusy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Menu Create/Edit Modal -->
+        <div x-show="showMenuModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" style="display: none;">
+            <div class="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-slate-900" x-text="menuModalMode === 'edit' ? 'Edit Menu' : 'Tambah Menu'"></h3>
+                    <button type="button" @click="closeMenuModal()" class="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700">Tutup</button>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    <input x-model="form.name" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Nama menu" />
+                    <select x-model="form.category_id" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500">
+                        <option value="">-- Pilih Kategori --</option>
+                        <template x-for="category in categories" :key="`modal-cat-${category.id}`">
+                            <option :value="category.id" x-text="category.name"></option>
+                        </template>
+                    </select>
+                    <input x-model="form.image_url" type="url" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="URL gambar eksternal (opsional)" />
+                    <textarea x-model="form.description" rows="2" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Deskripsi singkat menu"></textarea>
+                    <div>
+                        <input type="file" @change="onImageSelected($event)" accept="image/png,image/jpeg,image/jpg,image/webp" class="block w-full rounded-lg border border-slate-300 bg-white text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-700">
+                        <p class="mt-1 text-[11px] text-slate-500">Upload gambar lokal (jpg/png/webp, max 3MB)</p>
+                    </div>
+                    <input x-model="form.price" type="number" min="0" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Harga" />
+                    <input x-model="form.aliases" type="text" class="rounded-lg border-slate-300 text-sm focus:border-cyan-500 focus:ring-cyan-500" placeholder="Alias (pisah koma)" />
+                    <div class="flex items-center gap-2">
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                            <input x-model="form.is_active" type="checkbox" class="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                            Tersedia
+                        </label>
+                        <label x-show="editingId" class="inline-flex items-center gap-2 text-xs text-rose-600">
+                            <input x-model="form.remove_image" type="checkbox" class="rounded border-rose-300 text-rose-600 focus:ring-rose-500" />
+                            Hapus gambar saat simpan
+                        </label>
+                    </div>
+                </div>
+
+                <div x-show="previewImageUrl" class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p class="text-xs font-semibold text-slate-600">Preview Gambar</p>
+                    <img :src="previewImageUrl" alt="Preview menu" class="mt-2 h-28 w-28 rounded-lg border border-slate-200 object-cover" loading="lazy">
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="submitMenuModal()" :disabled="busy" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" x-text="menuModalMode === 'edit' ? 'Simpan Perubahan' : 'Tambah Menu'"></button>
+                    <button type="button" @click="closeMenuModal()" :disabled="busy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Menu Delete Modal -->
+        <div x-show="showDeleteMenuModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" style="display: none;">
+            <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 space-y-4">
+                <h3 class="text-lg font-bold text-slate-900">Hapus Menu</h3>
+                <p class="text-sm text-slate-600">Yakin ingin menghapus menu <span class="font-semibold" x-text="menuToDelete?.name || '-'" ></span>?</p>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="confirmDeleteMenu()" :disabled="busy" class="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50">Ya, Hapus</button>
+                    <button type="button" @click="showDeleteMenuModal = false" :disabled="busy" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Batal</button>
+                </div>
+            </div>
+        </div>
+
         <script>
             function menuManagement() {
                 return {
                     menus: [],
+                    selectedCategoryFilter: 'all',
                     loading: false,
                     busy: false,
                     editingId: null,
+                    showMenuModal: false,
+                    menuModalMode: 'create',
+                    showDeleteMenuModal: false,
+                    menuToDelete: null,
                     message: '',
                     messageTone: 'text-slate-600',
                     previewImageUrl: '',
@@ -221,6 +295,14 @@
                         } finally {
                             this.loading = false;
                         }
+                    },
+
+                    filteredMenus() {
+                        if (String(this.selectedCategoryFilter) === 'all') {
+                            return this.menus;
+                        }
+
+                        return this.menus.filter((menu) => String(menu.category_id || '') === String(this.selectedCategoryFilter));
                     },
 
                     aliasList() {
@@ -257,16 +339,17 @@
                         if (!this.form.name.trim()) {
                             this.message = 'Nama menu wajib diisi.';
                             this.messageTone = 'text-rose-600';
-                            return;
+                            return false;
                         }
 
                         if (!this.form.category_id) {
                             this.message = 'Kategori menu wajib dipilih.';
                             this.messageTone = 'text-rose-600';
-                            return;
+                            return false;
                         }
 
                         this.busy = true;
+                        let success = false;
                         try {
                             if (this.editingId) {
                                 const data = this.payload();
@@ -285,11 +368,21 @@
                             this.messageTone = 'text-emerald-600';
                             this.resetForm();
                             await this.fetchMenus();
+                            success = true;
                         } catch (error) {
                             this.message = this.resolveErrorMessage(error, 'Gagal menyimpan menu.');
                             this.messageTone = 'text-rose-600';
                         } finally {
                             this.busy = false;
+                        }
+
+                        return success;
+                    },
+
+                    async submitMenuModal() {
+                        const success = await this.submitForm();
+                        if (success) {
+                            this.showMenuModal = false;
                         }
                     },
 
@@ -307,6 +400,40 @@
                         this.previewImageUrl = menu.image_url || '';
                         this.message = `Mode edit: ${menu.name}`;
                         this.messageTone = 'text-slate-600';
+                    },
+
+                    openCreateMenuModal() {
+                        this.menuModalMode = 'create';
+                        this.resetForm();
+                        this.showMenuModal = true;
+                    },
+
+                    openEditMenuModal(menu) {
+                        this.menuModalMode = 'edit';
+                        this.startEdit(menu);
+                        this.showMenuModal = true;
+                    },
+
+                    closeMenuModal() {
+                        this.showMenuModal = false;
+                        this.resetForm();
+                    },
+
+                    openDeleteMenuModal(menu) {
+                        this.menuToDelete = menu;
+                        this.showDeleteMenuModal = true;
+                    },
+
+                    async confirmDeleteMenu() {
+                        if (!this.menuToDelete) {
+                            return;
+                        }
+
+                        await this.deleteMenu(this.menuToDelete, false);
+                        if (this.messageTone === 'text-emerald-600') {
+                            this.showDeleteMenuModal = false;
+                            this.menuToDelete = null;
+                        }
                     },
 
                     async toggleMenu(menu) {
@@ -343,8 +470,8 @@
                         }
                     },
 
-                    async deleteMenu(menu) {
-                        if (!confirm(`Hapus menu ${menu.name}?`)) {
+                    async deleteMenu(menu, askConfirm = true) {
+                        if (askConfirm && !confirm(`Hapus menu ${menu.name}?`)) {
                             return;
                         }
 
@@ -434,6 +561,10 @@
                     categoryLoading: false,
                     categoryBusy: false,
                     editingCategoryId: null,
+                    showCategoryModal: false,
+                    categoryModalMode: 'create',
+                    showDeleteCategoryModal: false,
+                    categoryToDelete: null,
                     categoryMessage: '',
                     categoryMessageTone: 'text-slate-600',
                     categoryForm: {
@@ -463,10 +594,11 @@
                         if (!this.categoryForm.name.trim()) {
                             this.categoryMessage = 'Nama kategori wajib diisi.';
                             this.categoryMessageTone = 'text-rose-600';
-                            return;
+                            return false;
                         }
 
                         this.categoryBusy = true;
+                        let success = false;
                         try {
                             const payload = {
                                 name: String(this.categoryForm.name || '').trim(),
@@ -485,12 +617,15 @@
                             this.categoryMessageTone = 'text-emerald-600';
                             this.resetCategoryForm();
                             await this.fetchCategories();
+                            success = true;
                         } catch (error) {
                             this.categoryMessage = this.resolveCategoryErrorMessage(error, 'Gagal menyimpan kategori.');
                             this.categoryMessageTone = 'text-rose-600';
                         } finally {
                             this.categoryBusy = false;
                         }
+
+                        return success;
                     },
 
                     startEditCategory(category) {
@@ -502,8 +637,49 @@
                         this.categoryMessageTone = 'text-slate-600';
                     },
 
-                    async deleteCategory(category) {
-                        if (!confirm(`Hapus kategori ${category.name}?`)) {
+                    openCreateCategoryModal() {
+                        this.categoryModalMode = 'create';
+                        this.resetCategoryForm();
+                        this.showCategoryModal = true;
+                    },
+
+                    openEditCategoryModal(category) {
+                        this.categoryModalMode = 'edit';
+                        this.startEditCategory(category);
+                        this.showCategoryModal = true;
+                    },
+
+                    closeCategoryModal() {
+                        this.showCategoryModal = false;
+                        this.resetCategoryForm();
+                    },
+
+                    async submitCategoryModal() {
+                        const success = await this.submitCategory();
+                        if (success) {
+                            this.showCategoryModal = false;
+                        }
+                    },
+
+                    openDeleteCategoryModal(category) {
+                        this.categoryToDelete = category;
+                        this.showDeleteCategoryModal = true;
+                    },
+
+                    async confirmDeleteCategory() {
+                        if (!this.categoryToDelete) {
+                            return;
+                        }
+
+                        await this.deleteCategory(this.categoryToDelete, false);
+                        if (this.categoryMessageTone === 'text-emerald-600') {
+                            this.showDeleteCategoryModal = false;
+                            this.categoryToDelete = null;
+                        }
+                    },
+
+                    async deleteCategory(category, askConfirm = true) {
+                        if (askConfirm && !confirm(`Hapus kategori ${category.name}?`)) {
                             return;
                         }
 

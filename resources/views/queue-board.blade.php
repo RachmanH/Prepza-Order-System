@@ -140,15 +140,6 @@
                             </template>
                         </div>
                     </div>
-
-                    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                        <p class="text-xs uppercase tracking-wide text-gray-500">Informasi</p>
-                        <ul class="mt-2 space-y-1 text-xs text-gray-600">
-                            <li>Antrian berjalan otomatis sesuai update status Layer 2.</li>
-                            <li>Jika audio aktif, notifikasi suara dibacakan sekali per nomor.</li>
-                            <li>Gunakan halaman ini untuk display monitor pelanggan.</li>
-                        </ul>
-                    </div>
                 </div>
             </section>
 
