@@ -137,7 +137,7 @@
                                     </ul>
                                 </div>
 
-                                <div class="flex flex-wrap gap-2">
+                                <div class="flex flex-wrap gap-2" x-show="['queued', 'waiting', 'processing'].includes(String(selectedOrder()?.status || '').toLowerCase())">
                                     <button type="button" @click="cancelSelectedOrder()" :disabled="busy" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Batalkan</button>
                                 </div>
 

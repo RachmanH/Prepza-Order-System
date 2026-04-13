@@ -252,6 +252,7 @@
                             <div class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
                                 <template x-for="menu in filteredMenus()" :key="menu.id">
                                     <div class="group cursor-pointer overflow-hidden rounded-xl border-2 p-0 transition-all"
+                                        @click="addMenuToDraft(menu)"
                                         :class="isMenuHighlighted(menu.name) 
                                             ? 'border-cyan-400 bg-cyan-50 shadow-md' 
                                             : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'">
@@ -306,7 +307,7 @@
                                 <input id="customer_name_kiosk" x-model="customerName" type="text" placeholder="Nama Anda" class="mt-1 w-full rounded-lg border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
                             </div>
                             <div>
-                                <label for="customer_gender_kiosk" class="text-xs font-bold uppercase text-slate-600">Gender</label>
+                                <label for="customer_gender_kiosk" class="text-xs font-bold uppercase text-slate-600">Gender (optional)</label>
                                 <select id="customer_gender_kiosk" x-model="customerGender" class="mt-1 w-full rounded-lg border-slate-300 text-sm focus:border-sky-500 focus:ring-sky-500">
                                     <option value="">-</option>
                                     <option value="male">Pria</option>
@@ -971,6 +972,47 @@
 
                     isMenuHighlighted(menuName) {
                         return this.detectedItems.some((item) => item.name === String(menuName).toLowerCase());
+                    },
+
+                    addMenuToDraft(menu) {
+                        const normalizedName = String(menu?.name || '').trim().toLowerCase();
+
+                        if (!normalizedName) {
+                            return;
+                        }
+
+                        const existing = this.detectedItems.find((item) => item.name === normalizedName);
+
+                        if (existing) {
+                            existing.qty = Math.max(1, Number(existing.qty || 1) + 1);
+                        } else {
+                            this.detectedItems = [
+                                ...this.detectedItems,
+                                {
+                                    name: normalizedName,
+                                    qty: 1,
+                                    note: null,
+                                },
+                            ];
+                        }
+
+                        this.detectedItems = this.detectedItems.map((item) => ({
+                            ...item,
+                            qty: Math.max(1, Number(item.qty || 1)),
+                            note: String(item.note || '').trim() || null,
+                        }));
+
+                        if (!this.showConfirmModal) {
+                            this.confirmingItems = this.detectedItems.map((item) => ({
+                                ...item,
+                                note: item.note || null,
+                            }));
+                        }
+
+                        this.rawText = this.buildRawTextFromConfirmingItems();
+                        this.customerSpeechCommitted = this.rawText;
+                        this.statusMessage = `${menu.name} ditambahkan ke pesanan.`;
+                        this.statusTone = 'text-emerald-600';
                     },
 
                     async submitOrder() {
