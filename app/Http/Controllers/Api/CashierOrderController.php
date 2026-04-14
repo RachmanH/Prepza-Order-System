@@ -104,7 +104,8 @@ class CashierOrderController extends Controller
                 ] : null,
                 'upcoming' => $upcoming,
                 'recent_done' => $recentDone,
-                'trend' => $trend,
+                'trend'       => $trend,
+                'trends'      => is_array($trend) ? $trend : ($trend ? [$trend] : []),
                 'server_time' => now()->toIso8601String(),
             ],
         ]);
@@ -113,70 +114,91 @@ class CashierOrderController extends Controller
     public function updateTrend(Request $request): JsonResponse
     {
         $payload = $request->validate([
-            'title' => ['required', 'string', 'max:120'],
-            'image_url' => ['required', 'url', 'max:2048'],
-            'caption' => ['nullable', 'string', 'max:300'],
-            'score' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'title'            => ['required', 'string', 'max:120'],
+            'image_url'        => ['required', 'url', 'max:2048'],
+            'caption'          => ['nullable', 'string', 'max:300'],
+            'score'            => ['nullable', 'integer', 'min:0', 'max:100'],
+            'gender_target'    => ['nullable', 'in:male,female,all'],
             'source_timestamp' => ['nullable', 'date'],
-            'expires_at' => ['nullable', 'date', 'after:now'],
-            'is_active' => ['nullable', 'boolean'],
+            'expires_at'       => ['nullable', 'date'],   // allow past dates — we'll handle below
+            'is_active'        => ['nullable', 'boolean'],
         ]);
 
-        if (($payload['is_active'] ?? true) === true) {
-            QueueTrend::query()->where('is_active', true)->update(['is_active' => false]);
+        // Auto-detect gender_target from title if not explicitly sent
+        $genderTarget = $payload['gender_target'] ?? null;
+        if (! $genderTarget) {
+            $titleLower = mb_strtolower($payload['title']);
+            if (preg_match('/\b(laki.laki|pria|male|cowok|cowo)\b/', $titleLower)) {
+                $genderTarget = 'male';
+            } elseif (preg_match('/\b(perempuan|wanita|female|cewek|cewe)\b/', $titleLower)) {
+                $genderTarget = 'female';
+            } else {
+                $genderTarget = 'all';
+            }
         }
 
-        $trend = QueueTrend::query()->create([
-            'title' => $payload['title'],
-            'image_url' => $payload['image_url'],
-            'caption' => $payload['caption'] ?? null,
-            'score' => $payload['score'] ?? null,
-            'source_timestamp' => $payload['source_timestamp'] ?? now(),
-            'expires_at' => $payload['expires_at'] ?? null,
-            'is_active' => (bool) ($payload['is_active'] ?? true),
-            'source_payload' => $payload,
-        ]);
+        // If expires_at is already in the past, treat as no expiry (Layer 2 may send stale timestamps)
+        $expiresAt = isset($payload['expires_at']) ? now()->parse($payload['expires_at']) : null;
+        if ($expiresAt && $expiresAt->isPast()) {
+            $expiresAt = null;
+        }
+
+        // Upsert by title — update existing active trend with same title instead of creating duplicates
+        $trend = QueueTrend::query()->updateOrCreate(
+            ['title' => $payload['title']],
+            [
+                'image_url'        => $payload['image_url'],
+                'caption'          => $payload['caption'] ?? null,
+                'score'            => $payload['score'] ?? null,
+                'gender_target'    => $genderTarget,
+                'source_timestamp' => isset($payload['source_timestamp']) ? now()->parse($payload['source_timestamp']) : now(),
+                'expires_at'       => $expiresAt,
+                'is_active'        => (bool) ($payload['is_active'] ?? true),
+                'source_payload'   => $payload,
+            ]
+        );
 
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'Tren makanan berhasil diperbarui.',
-            'data' => [
-                'id' => $trend->id,
-                'title' => $trend->title,
-                'image_url' => $trend->image_url,
-                'caption' => $trend->caption,
-                'score' => $trend->score,
-                'source_timestamp' => $trend->source_timestamp?->toIso8601String(),
-                'expires_at' => $trend->expires_at?->toIso8601String(),
-                'is_active' => (bool) $trend->is_active,
-            ],
+            'data'    => $this->serializeTrend($trend),
         ]);
     }
 
     private function activeTrend(): ?array
     {
-        $trend = QueueTrend::query()
+        // Return up to 5 active trends for carousel — ordered by gender_target priority then recency
+        $trends = QueueTrend::query()
             ->where('is_active', true)
             ->where(function ($query): void {
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
             })
+            ->orderByRaw("CASE gender_target WHEN 'female' THEN 0 WHEN 'male' THEN 1 ELSE 2 END")
             ->orderByDesc('source_timestamp')
             ->orderByDesc('id')
-            ->first();
+            ->limit(5)
+            ->get();
 
-        if (! $trend) {
+        if ($trends->isEmpty()) {
             return null;
         }
 
+        // Return array of trends for carousel; keep single-item backward compat via first element
+        return $trends->map(fn (QueueTrend $t): array => $this->serializeTrend($t))->values()->all();
+    }
+
+    private function serializeTrend(QueueTrend $trend): array
+    {
         return [
-            'id' => $trend->id,
-            'title' => $trend->title,
-            'image_url' => $trend->image_url,
-            'caption' => $trend->caption,
-            'score' => $trend->score,
+            'id'               => $trend->id,
+            'title'            => $trend->title,
+            'image_url'        => $trend->image_url,
+            'caption'          => $trend->caption,
+            'score'            => $trend->score,
+            'gender_target'    => $trend->gender_target ?? 'all',
             'source_timestamp' => $trend->source_timestamp?->toIso8601String(),
-            'expires_at' => $trend->expires_at?->toIso8601String(),
+            'expires_at'       => $trend->expires_at?->toIso8601String(),
         ];
     }
 

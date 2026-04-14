@@ -11,6 +11,7 @@ class QueueTrend extends Model
         'image_url',
         'caption',
         'score',
+        'gender_target',
         'source_timestamp',
         'expires_at',
         'is_active',
