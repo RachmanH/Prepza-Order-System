@@ -8,9 +8,9 @@
         </div>
     </x-slot>
 
-    <div class="py-10" x-data="orderKiosk()" x-init="init()">
-        <!-- Modal Konfirmasi Order -->
-        <div x-show="showConfirmModal" 
+    <div class="py-5" x-data="orderKiosk()" x-init="init()">
+        <!-- Modal Konfirmasi Order — Wide Layout -->
+        <div x-show="showConfirmModal"
              x-transition:enter="transition ease-out duration-200"
              x-transition:enter-start="opacity-0"
              x-transition:enter-end="opacity-100"
@@ -18,8 +18,9 @@
              x-transition:leave-start="opacity-100"
              x-transition:leave-end="opacity-0"
              @click="closeConfirmModal()"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div class="flex w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                 style="max-height: 90vh;"
                  @click.stop
                  x-transition:enter="transition ease-out duration-200"
                  x-transition:enter-start="opacity-0 scale-95"
@@ -27,38 +28,114 @@
                  x-transition:leave="transition ease-in duration-150"
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95">
-                <h3 class="text-lg font-bold text-slate-900">Konfirmasi Pesanan</h3>
-                <p class="mt-2 text-sm text-slate-600">Silakan review item pesanan Anda:</p>
 
-                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <p><span class="font-semibold text-slate-800">Nama:</span> <span x-text="customerName || '-'">-</span></p>
-                    <p class="mt-1"><span class="font-semibold text-slate-800">Jenis kelamin:</span> <span x-text="genderLabel(customerGender)">-</span></p>
+                <!-- Header -->
+                <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-900">Konfirmasi Pesanan</h3>
+                        <p class="text-xs text-slate-500">Review dan edit item sebelum dikonfirmasi</p>
+                    </div>
+                    <button type="button" @click="closeConfirmModal()"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
                 </div>
-                
-                <div class="mt-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <template x-for="(item, itemIndex) in confirmingItems" :key="`${item.name}-${itemIndex}`">
-                        <div class="space-y-2 rounded-lg border border-slate-200 bg-white p-2">
-                            <div class="flex items-center justify-between gap-2">
-                                <span class="text-sm font-semibold text-slate-800" x-text="item.name"></span>
-                                <div class="flex items-center gap-1">
-                                    <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, -1)">-</button>
-                                    <span class="rounded-full bg-cyan-100 px-2 py-1 text-xs font-bold text-cyan-700" x-text="`x${item.qty}`"></span>
-                                    <button type="button" class="h-7 w-7 rounded border border-slate-300 text-slate-700" @click="changeConfirmingItemQty(item.name, 1)">+</button>
-                                    <button type="button" class="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-600" @click="removeConfirmingItem(item.name)">Hapus</button>
+
+                <!-- Body: split layout -->
+                <div class="flex flex-1 overflow-hidden">
+
+                    <!-- LEFT: Customer Info (fixed, tidak scroll) -->
+                    <div class="flex w-56 shrink-0 flex-col gap-4 border-r border-slate-100 bg-slate-50 p-5">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Pelanggan</p>
+                            <div class="mt-3 space-y-3">
+                                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                                    <p class="text-xs text-slate-500">Nama</p>
+                                    <p class="mt-0.5 text-sm font-semibold text-slate-900" x-text="customerName || '-'"></p>
+                                </div>
+                                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                                    <p class="text-xs text-slate-500">Jenis Kelamin</p>
+                                    <p class="mt-0.5 text-sm font-semibold text-slate-900" x-text="genderLabel(customerGender)"></p>
                                 </div>
                             </div>
-                            <input type="text"
-                                :value="item.note || ''"
-                                @input="updateConfirmingItemNote(item.name, $event.target.value)"
-                                class="w-full rounded-lg border-slate-300 text-xs focus:border-cyan-500 focus:ring-cyan-500"
-                                placeholder="Keterangan item (contoh: tidak pedas)">
                         </div>
-                    </template>
+
+                        <div class="mt-auto rounded-xl border border-slate-200 bg-white p-3">
+                            <p class="text-xs text-slate-500">Total Item</p>
+                            <p class="mt-0.5 text-2xl font-bold text-brand-600" x-text="confirmingItems.reduce((s, i) => s + i.qty, 0)"></p>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Item Grid (scrollable) -->
+                    <div class="flex-1 overflow-y-auto p-5">
+                        <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            Daftar Item (<span x-text="confirmingItems.length"></span>)
+                        </p>
+
+                        <template x-if="confirmingItems.length === 0">
+                            <div class="flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-slate-200">
+                                <p class="text-sm text-slate-400">Belum ada item</p>
+                            </div>
+                        </template>
+
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            <template x-for="(item, itemIndex) in confirmingItems" :key="`${item.name}-${itemIndex}`">
+                                <div class="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    <!-- Item name + remove -->
+                                    <div class="flex items-start justify-between gap-2">
+                                        <p class="text-sm font-semibold capitalize text-slate-900 leading-snug" x-text="item.name"></p>
+                                        <button type="button"
+                                                @click="removeConfirmingItem(item.name)"
+                                                class="shrink-0 rounded-lg border border-rose-100 p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition">
+                                            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    <!-- Qty controls -->
+                                    <div class="flex items-center gap-2">
+                                        <button type="button"
+                                                @click="changeConfirmingItemQty(item.name, -1)"
+                                                class="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition text-sm font-bold">−</button>
+                                        <span class="min-w-[2rem] text-center text-sm font-bold text-slate-900" x-text="item.qty"></span>
+                                        <button type="button"
+                                                @click="changeConfirmingItemQty(item.name, 1)"
+                                                class="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition text-sm font-bold">+</button>
+                                        <span class="ml-auto rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700" x-text="`×${item.qty}`"></span>
+                                    </div>
+
+                                    <!-- Note input -->
+                                    <input type="text"
+                                           :value="item.note || ''"
+                                           @input="updateConfirmingItemNote(item.name, $event.target.value)"
+                                           class="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400 transition"
+                                           placeholder="Catatan (contoh: tidak pedas)">
+                                </div>
+                            </template>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="mt-4 flex gap-2">
-                    <button type="button" @click="closeConfirmModal()" class="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-                    <button type="button" @click="confirmOrderSubmit()" :disabled="submitting || confirmingItems.length === 0" class="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-emerald-700">Konfirmasi Ya</button>
+                <!-- Footer -->
+                <div class="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-4">
+                    <p class="text-xs text-slate-500">
+                        <span x-text="confirmingItems.length"></span> jenis item,
+                        <span x-text="confirmingItems.reduce((s, i) => s + i.qty, 0)"></span> total qty
+                    </p>
+                    <div class="flex gap-3">
+                        <button type="button" @click="closeConfirmModal()"
+                                class="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                            Batal
+                        </button>
+                        <button type="button" @click="confirmOrderSubmit()"
+                                :disabled="submitting || confirmingItems.length === 0"
+                                class="rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition">
+                            <span x-text="submitting ? 'Memproses...' : 'Konfirmasi Pesanan'"></span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -89,28 +166,10 @@
                     0% { transform: scale(0.88); opacity: 0.3; }
                     100% { transform: scale(1); opacity: 1; }
                 }
-                .marquee {
-                    white-space: nowrap;
-                    overflow: hidden;
-                }
-                .marquee span {
-                    display: inline-block;
-                    padding-left: 100%;
-                    animation: marquee 18s linear infinite;
-                }
-                @keyframes marquee {
-                    0% { transform: translateX(0); }
-                    100% { transform: translateX(-100%); }
-                }
+
             </style>
 
-            <section class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
-                <div class="marquee text-sm font-medium text-amber-900">
-                    <span x-text="activeBanner"></span>
-                </div>
-            </section>
-
-            <!-- Order Success Modal -->
+<!-- Order Success Modal -->
             <div x-show="showSuccessModal" 
                  x-transition:enter="transition ease-out duration-200"
                  x-transition:enter-start="opacity-0"
@@ -120,7 +179,8 @@
                  x-transition:leave-end="opacity-0"
                  @click="closeSuccessModal()"
                  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                <div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+                <div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                     style="max-height: 90vh;"
                      @click.stop
                      x-transition:enter="transition ease-out duration-200"
                      x-transition:enter-start="opacity-0 scale-95"
@@ -128,76 +188,95 @@
                      x-transition:leave="transition ease-in duration-150"
                      x-transition:leave-start="opacity-100 scale-100"
                      x-transition:leave-end="opacity-0 scale-95">
-                    
-                    <div class="grid grid-cols-3 gap-5">
-                        <!-- LEFT: Queue Number - PRIMARY -->
-                        <div class="flex flex-col items-center justify-center rounded-xl border-2 border-cyan-400 bg-gradient-to-br from-cyan-50 to-blue-50 p-4">
-                            <p class="text-xs font-bold uppercase tracking-wider text-slate-600">Nomor Antrian</p>
-                            <p class="mt-2 text-5xl font-black tracking-wider text-cyan-600 queue-pop" x-text="queueNumber ?? '-'" :key="queueNumber"></p>
+
+                    <!-- Header -->
+                    <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100">
+                                <svg class="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-base font-bold text-slate-900">Pesanan Berhasil!</p>
+                                <p class="text-xs text-slate-500">Silakan tunggu giliran Anda</p>
+                            </div>
+                        </div>
+                        <button type="button" @click="closeSuccessModal()"
+                                class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Body: 3 kolom -->
+                    <div class="grid grid-cols-3 gap-0 overflow-hidden" style="max-height: calc(90vh - 130px);">
+
+                        <!-- LEFT: Nomor Antrian -->
+                        <div class="flex flex-col items-center justify-center gap-3 border-r border-slate-100 bg-gradient-to-br from-brand-50 to-cyan-50 p-8">
+                            <p class="text-xs font-bold uppercase tracking-widest text-slate-500">Nomor Antrian</p>
+                            <p class="text-7xl font-black tracking-wider text-brand-600 queue-pop" x-text="queueNumber ?? '-'" :key="queueNumber"></p>
+                            <div class="mt-2 rounded-xl border border-brand-200 bg-white px-4 py-2 text-center">
+                                <p class="text-xs text-slate-500">Order ID</p>
+                                <p class="font-mono text-xs font-bold text-slate-800" x-text="orderCode || '-'"></p>
+                            </div>
                         </div>
 
-                        <!-- MIDDLE: Customer & Order Info -->
-                        <div class="space-y-2">
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <p class="text-xs font-bold uppercase text-slate-600">Nama</p>
-                                <p class="text-sm font-semibold text-slate-900" x-text="lastOrderCustomerName || '-'"></p>
+                        <!-- MIDDLE: Customer + Items (scrollable) -->
+                        <div class="flex flex-col overflow-hidden border-r border-slate-100">
+                            <div class="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                                <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Detail Pesanan</p>
                             </div>
-
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <p class="text-xs font-bold uppercase text-slate-600">Order ID</p>
-                                <p class="font-mono text-xs font-bold text-slate-900" x-text="orderCode || '-'"></p>
-                            </div>
-
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                <p class="text-xs font-bold uppercase text-slate-600">Items</p>
-                                <ul class="mt-1 space-y-0.5 text-xs text-slate-700">
+                            <div class="space-y-2 overflow-y-auto p-4">
+                                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                                    <p class="text-xs text-slate-500">Nama</p>
+                                    <p class="mt-0.5 text-sm font-semibold text-slate-900" x-text="lastOrderCustomerName || '-'"></p>
+                                </div>
+                                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                    <p class="mb-2 text-xs font-semibold text-slate-500">Item Pesanan</p>
                                     <template x-if="finalItems.length === 0">
-                                        <li class="text-slate-500">-</li>
+                                        <p class="text-xs text-slate-400">-</p>
                                     </template>
-                                    <template x-for="item in finalItems" :key="item.name + item.qty + (item.note || '')">
-                                        <li>
-                                            <span x-text="item.name"></span>
-                                            <span class="font-semibold" x-text="`×${item.qty}`"></span>
-                                            <span x-show="item.note" class="text-[11px] text-slate-500" x-text="`(${item.note})`"></span>
-                                        </li>
-                                    </template>
-                                </ul>
+                                    <div class="space-y-1.5">
+                                        <template x-for="item in finalItems" :key="item.name + item.qty + (item.note || '')">
+                                            <div class="flex items-start justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                                <div>
+                                                    <p class="text-xs font-semibold capitalize text-slate-800" x-text="item.name"></p>
+                                                    <p x-show="item.note" class="text-[11px] text-slate-500" x-text="item.note"></p>
+                                                </div>
+                                                <span class="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700" x-text="`×${item.qty}`"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- RIGHT: Status & Actions -->
-                        <div class="flex flex-col justify-between">
-                            <div class="flex items-center justify-center gap-2 rounded-lg bg-emerald-50 p-3">
-                                <div class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                        <!-- RIGHT: Actions -->
+                        <div class="flex flex-col justify-between p-5">
+                            <div class="space-y-3">
+                                <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Cetak Struk</p>
+                                <button type="button" @click="printSuccessModal('pdf')"
+                                        class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                    <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                     </svg>
-                                </div>
-                                <div>
-                                    <p class="text-xs font-bold text-emerald-900">Berhasil!</p>
-                                    <p class="text-xs text-emerald-700">Tunggu giliran Anda</p>
-                                </div>
-                            </div>
-
-                            <div class="space-y-2">
-                                <div class="grid grid-cols-2 gap-2">
-                                    <button type="button" @click="printSuccessModal('pdf')" class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2m0 0v-8m0 8H3m15-8h3" />
-                                        </svg>
-                                        <span>PDF</span>
-                                    </button>
-                                    <button type="button" @click="printSuccessModal('thermal')" class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2z" />
-                                        </svg>
-                                        <span>Thermal</span>
-                                    </button>
-                                </div>
-                                <button type="button" @click="closeSuccessModal()" class="w-full rounded-lg bg-slate-900 px-2 py-2 text-xs font-bold text-white hover:bg-slate-800 transition">
-                                    Lanjut Order
+                                    Cetak PDF
+                                </button>
+                                <button type="button" @click="printSuccessModal('thermal')"
+                                        class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                    <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
+                                    </svg>
+                                    Cetak Thermal
                                 </button>
                             </div>
+
+                            <button type="button" @click="closeSuccessModal()"
+                                    class="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800 transition">
+                                Lanjut Order Baru
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -296,7 +375,7 @@
                     </aside>
 
                     <!-- VOICE INPUT - COMPACT (Right, 4-5 cols) -->
-                    <main class="lg:col-span-5 flex flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5">
+                    <main class="lg:col-span-5 flex flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5 min-h-[600px]">
                         <h3 class="text-lg font-bold text-slate-900">🎤 Voice Order</h3>
                         <p class="mt-1 text-xs text-slate-500">Bicara pesanan atau ketik manual</p>
 
@@ -343,9 +422,11 @@
                         </p>
 
                         <!-- Transcript / Manual Input -->
-                        <div class="mt-3 flex-1">
+                        <div class="mt-3 flex flex-1 flex-col min-h-0">
                             <label for="raw_text_kiosk" class="text-xs font-bold uppercase text-slate-600">Pesanan</label>
-                            <textarea id="raw_text_kiosk" x-model="rawText" @input="scheduleDraftPreview()" rows="2" class="mt-1 w-full flex-1 rounded-lg border-slate-300 text-xs focus:border-sky-500 focus:ring-sky-500" placeholder="Contoh: nasgor, teh anget"></textarea>
+                            <textarea id="raw_text_kiosk" x-model="rawText" @input="scheduleDraftPreview()"
+                                class="mt-1 flex-1 w-full resize-none rounded-lg border-slate-300 text-xs focus:border-sky-500 focus:ring-sky-500 min-h-[80px]"
+                                placeholder="Contoh: nasgor, teh anget"></textarea>
                         </div>
 
                         <!-- Detected Items -->
@@ -412,13 +493,7 @@
                     lastOrderCustomerGender: '',
                     draftPreviewTimer: null,
                     draftPreviewRequestId: 0,
-                    banners: [
-                        'Promo dummy: Diskon 20% untuk semua minuman panas di jam 08:00-10:00.',
-                        'Banner dummy: Paket hemat nasi goreng + teh tersedia hari ini.',
-                        'Banner dummy: Jalur express aktif untuk pesanan voice yang valid.'
-                    ],
-                    activeBanner: '',
-                    bannerTimer: null,
+
                     showConfirmModal: false,
                     showSuccessModal: false,
                     confirmingItems: [],
@@ -434,7 +509,6 @@
                         this.fetchCategories();
                         this.fetchMenus();
                         this.initSpeech();
-                        this.rotateBanner();
                         this.setupKeyboardListener();
                     },
 
@@ -1783,16 +1857,7 @@
                         return '-';
                     },
 
-                    rotateBanner() {
-                        let index = 0;
-                        this.activeBanner = this.banners[index];
-                        this.bannerTimer = setInterval(() => {
-                            index = (index + 1) % this.banners.length;
-                            this.activeBanner = this.banners[index];
-                        }, 4500);
-                    },
-
-                    formatCurrency(value) {
+formatCurrency(value) {
                         const amount = Number(value || 0);
                         return new Intl.NumberFormat('id-ID', {
                             style: 'currency',

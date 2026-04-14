@@ -42,4 +42,9 @@ return [
         'stt_model' => env('GROQ_STT_MODEL', 'whisper-large-v3-turbo'),
     ],
 
+    'layer2' => [
+        'base_url' => env('LAYER2_ENDPOINT_BASE_URL', 'http://127.0.0.1:8002'),
+        'incoming_order_path' => env('LAYER2_INCOMING_ORDER_PATH', '/api/orders/incoming'),
+    ],
+
 ];

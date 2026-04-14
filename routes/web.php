@@ -12,7 +12,12 @@ Route::middleware([
     'verified',
 ])->group(function () {
     Route::get('/dashboard', function () {
-        return view('dashboard');
+        return view('dashboard', [
+            'orderHariIni'   => \App\Models\Order::whereDate('created_at', today())->count(),
+            'orderWaiting'   => \App\Models\Order::where('status', 'waiting')->count(),
+            'orderProses'    => \App\Models\Order::where('status', 'processing')->count(),
+            'orderSelesai'   => \App\Models\Order::where('status', 'done')->whereDate('created_at', today())->count(),
+        ]);
     })->name('dashboard');
 
     Route::get('/order-kiosk', function () {

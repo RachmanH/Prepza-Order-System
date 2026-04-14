@@ -4,10 +4,10 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <title>{{ config('app.name', 'Sistem Order') }}</title>
+        <title>Prepza</title>
 
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=space-grotesk:400,500,600,700" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=plus-jakarta-sans:400,500,600,700&display=swap" rel="stylesheet" />
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
 
@@ -22,7 +22,7 @@
             }
 
             body {
-                font-family: 'Space Grotesk', sans-serif;
+                font-family: 'Plus Jakarta Sans', sans-serif;
                 color: var(--ink);
                 background:
                     radial-gradient(circle at 12% 12%, rgba(34, 211, 238, 0.2), transparent 36%),
@@ -48,7 +48,7 @@
             <header class="mb-10 flex items-center justify-between">
                 <div>
                     <p class="text-xs uppercase tracking-[0.3em] text-slate-500">Aplikasi Internal</p>
-                    <h1 class="text-xl font-bold">Sistem Order</h1>
+                    <h1 class="text-xl font-bold">Prepza</h1>
                 </div>
 
                 @if (Route::has('login'))

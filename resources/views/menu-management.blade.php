@@ -316,10 +316,16 @@
                         const data = new FormData();
                         data.append('name', String(this.form.name || '').trim());
                         data.append('description', String(this.form.description || '').trim());
-                        data.append('image_url', String(this.form.image_url || '').trim());
                         data.append('price', Number(this.form.price || 0));
                         data.append('is_active', this.form.is_active ? '1' : '0');
                         data.append('remove_image', this.form.remove_image ? '1' : '0');
+
+                        // Hanya kirim image_url kalau ada isinya — empty string akan gagal validasi `url` di backend
+                        const imageUrl = String(this.form.image_url || '').trim();
+                        if (imageUrl) {
+                            data.append('image_url', imageUrl);
+                        }
+
                         if (this.form.category_id) {
                             data.append('category_id', this.form.category_id);
                         }

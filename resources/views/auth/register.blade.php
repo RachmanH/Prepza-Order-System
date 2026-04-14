@@ -1,60 +1,59 @@
 <x-guest-layout>
     <x-authentication-card>
-        <x-slot name="logo">
-            <x-authentication-card-logo />
-        </x-slot>
+        <div class="mb-8">
+            <h1 class="text-2xl font-bold text-slate-900">Buat akun baru</h1>
+            <p class="mt-1.5 text-sm text-slate-500">Daftarkan diri Anda untuk mulai menggunakan Prepza.</p>
+        </div>
 
-        <x-validation-errors class="mb-4" />
+        <x-validation-errors class="mb-5" />
 
-        <form method="POST" action="{{ route('register') }}">
+        <form method="POST" action="{{ route('register') }}" class="space-y-5">
             @csrf
 
             <div>
-                <x-label for="name" value="{{ __('Name') }}" />
-                <x-input id="name" class="block mt-1 w-full" type="text" name="name" :value="old('name')" required autofocus autocomplete="name" />
+                <x-label for="name" value="{{ __('Nama Lengkap') }}" />
+                <x-input id="name" type="text" name="name" :value="old('name')" required autofocus autocomplete="name"
+                    placeholder="Nama Anda" />
             </div>
 
-            <div class="mt-4">
+            <div>
                 <x-label for="email" value="{{ __('Email') }}" />
-                <x-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required autocomplete="username" />
+                <x-input id="email" type="email" name="email" :value="old('email')" required autocomplete="username"
+                    placeholder="nama@email.com" />
             </div>
 
-            <div class="mt-4">
+            <div>
                 <x-label for="password" value="{{ __('Password') }}" />
-                <x-input id="password" class="block mt-1 w-full" type="password" name="password" required autocomplete="new-password" />
+                <x-input id="password" type="password" name="password" required autocomplete="new-password"
+                    placeholder="Min. 8 karakter" />
             </div>
 
-            <div class="mt-4">
-                <x-label for="password_confirmation" value="{{ __('Confirm Password') }}" />
-                <x-input id="password_confirmation" class="block mt-1 w-full" type="password" name="password_confirmation" required autocomplete="new-password" />
+            <div>
+                <x-label for="password_confirmation" value="{{ __('Konfirmasi Password') }}" />
+                <x-input id="password_confirmation" type="password" name="password_confirmation" required autocomplete="new-password"
+                    placeholder="Ulangi password" />
             </div>
 
             @if (Laravel\Jetstream\Jetstream::hasTermsAndPrivacyPolicyFeature())
-                <div class="mt-4">
-                    <x-label for="terms">
-                        <div class="flex items-center">
-                            <x-checkbox name="terms" id="terms" required />
-
-                            <div class="ms-2">
-                                {!! __('I agree to the :terms_of_service and :privacy_policy', [
-                                        'terms_of_service' => '<a target="_blank" href="'.route('terms.show').'" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">'.__('Terms of Service').'</a>',
-                                        'privacy_policy' => '<a target="_blank" href="'.route('policy.show').'" class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">'.__('Privacy Policy').'</a>',
-                                ]) !!}
-                            </div>
-                        </div>
-                    </x-label>
+                <div class="flex items-start gap-2.5">
+                    <x-checkbox name="terms" id="terms" required class="mt-0.5" />
+                    <label for="terms" class="text-sm text-slate-600 cursor-pointer leading-relaxed">
+                        Saya menyetujui
+                        <a href="{{ route('terms.show') }}" target="_blank" class="font-medium text-brand-600 hover:text-brand-700">Syarat Layanan</a>
+                        dan
+                        <a href="{{ route('policy.show') }}" target="_blank" class="font-medium text-brand-600 hover:text-brand-700">Kebijakan Privasi</a>
+                    </label>
                 </div>
             @endif
 
-            <div class="flex items-center justify-end mt-4">
-                <a class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" href="{{ route('login') }}">
-                    {{ __('Already registered?') }}
-                </a>
-
-                <x-button class="ms-4">
-                    {{ __('Register') }}
-                </x-button>
-            </div>
+            <x-button class="w-full justify-center py-3">
+                Buat Akun
+            </x-button>
         </form>
+
+        <p class="mt-6 text-center text-sm text-slate-500">
+            Sudah punya akun?
+            <a href="{{ route('login') }}" class="font-semibold text-brand-600 hover:text-brand-700 transition">Masuk di sini</a>
+        </p>
     </x-authentication-card>
 </x-guest-layout>

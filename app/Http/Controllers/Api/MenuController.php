@@ -129,51 +129,56 @@ class MenuController extends Controller
 
     public function update(Request $request, Menu $menu): JsonResponse
     {
+        // Normalise empty string → null so the `nullable|url` rule passes cleanly
+        if ($request->input('image_url') === '') {
+            $request->merge(['image_url' => null]);
+        }
+
         $payload = $request->validate([
-            'name' => ['required', 'string', 'max:120', Rule::unique('menus', 'name')->ignore($menu->id)],
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'description' => ['nullable', 'string', 'max:500'],
-            'image_url' => ['nullable', 'url', 'max:2048'],
-            'image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
+            'name'         => ['required', 'string', 'max:120', Rule::unique('menus', 'name')->ignore($menu->id)],
+            'category_id'  => ['required', 'integer', 'exists:categories,id'],
+            'description'  => ['nullable', 'string', 'max:500'],
+            'image_url'    => ['nullable', 'url', 'max:2048'],
+            'image_file'   => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
             'remove_image' => ['nullable', 'boolean'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'is_active' => ['nullable', 'boolean'],
-            'aliases' => ['nullable', 'array'],
-            'aliases.*' => ['nullable', 'string', 'max:120'],
+            'price'        => ['required', 'numeric', 'min:0'],
+            'is_active'    => ['nullable', 'boolean'],
+            'aliases'      => ['nullable', 'array'],
+            'aliases.*'    => ['nullable', 'string', 'max:120'],
         ]);
 
-        $name = Str::of($payload['name'])->squish()->toString();
+        $name        = Str::of($payload['name'])->squish()->toString();
         $removeImage = (bool) ($payload['remove_image'] ?? false);
 
         if ($removeImage && $menu->image_path) {
             Storage::disk('public')->delete($menu->image_path);
             $menu->image_path = null;
-            $menu->image_url = null;
+            $menu->image_url  = null;
         }
 
         if ($request->hasFile('image_file')) {
+            // Replace existing stored file
             if ($menu->image_path) {
                 Storage::disk('public')->delete($menu->image_path);
             }
-
             $menu->image_path = $request->file('image_file')->store('menus', 'public');
-            $menu->image_url = null;
-        } elseif (array_key_exists('image_url', $payload)) {
-            $menu->image_url = $payload['image_url'];
-            if ($payload['image_url']) {
-                $menu->image_path = null;
-            }
+            $menu->image_url  = null;
+        } elseif (array_key_exists('image_url', $payload) && $payload['image_url'] !== null) {
+            // Only overwrite with external URL when one is explicitly provided
+            $menu->image_url  = $payload['image_url'];
+            $menu->image_path = null;
         }
+        // If neither image_file nor image_url was sent, leave existing image untouched
 
         $menu->update([
-            'name' => $name,
-            'slug' => $menu->name === $name ? $menu->slug : $this->buildUniqueSlug($name, $menu->id),
+            'name'        => $name,
+            'slug'        => $menu->name === $name ? $menu->slug : $this->buildUniqueSlug($name, $menu->id),
             'category_id' => $payload['category_id'],
             'description' => Str::of((string) ($payload['description'] ?? ''))->squish()->toString() ?: null,
-            'image_path' => $menu->image_path,
-            'image_url' => $menu->image_url,
-            'price' => $payload['price'],
-            'is_active' => (bool) ($payload['is_active'] ?? $menu->is_active),
+            'image_path'  => $menu->image_path,
+            'image_url'   => $menu->image_url,
+            'price'       => $payload['price'],
+            'is_active'   => (bool) ($payload['is_active'] ?? $menu->is_active),
         ]);
 
         if (array_key_exists('aliases', $payload)) {
@@ -183,9 +188,9 @@ class MenuController extends Controller
         $menu->load('aliases:id,menu_id,alias,normalized_alias', 'category:id,name,slug');
 
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'Menu berhasil diperbarui.',
-            'data' => $this->serializeMenu($menu, true),
+            'data'    => $this->serializeMenu($menu, true),
         ]);
     }
 
