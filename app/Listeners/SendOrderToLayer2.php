@@ -38,11 +38,12 @@ class SendOrderToLayer2 implements ShouldQueue
                 ->acceptJson()
                 ->asJson()
                 ->post($endpoint, [
-                    'order_id' => $order->id,
-                    'order_code' => $order->order_code,
+                    'order_id'      => $order->id,
+                    'order_code'    => $order->order_code,
                     'customer_name' => $order->customer_name,
-                    'gender' => $order->gender,
-                    'items' => $order->items->map(fn ($item) => [
+                    'gender'        => $order->gender,
+                    'status'        => 'waiting',
+                    'items'         => $order->items->map(fn ($item) => [
                         'name' => $item->item_name,
                         'qty' => $item->qty,
                         'note' => $item->note,

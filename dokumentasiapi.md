@@ -8,7 +8,6 @@ Dokumen ini menjelaskan kontrak integrasi antara Layer 1 (sistem Laravel ini) da
 - GET /api/categories
 - GET /api/menus
 - GET /api/queue/orders
-- GET /api/queue/board
 
 2. Layer 2 mengirim update ke Layer 1:
 - PATCH /api/queue/orders/{order}/external-update
@@ -27,7 +26,6 @@ Catatan kompatibilitas:
 
 ### orders.status (status order internal Layer 1)
 Nilai yang mungkin:
-- queued
 - waiting
 - processing
 - done
@@ -368,3 +366,32 @@ Jika ingin kontrol penuh status order internal, tambahkan queue_status:
 
 Saat ini endpoint integrasi masih terbuka tanpa token khusus Layer 2.
 Disarankan menambahkan signature atau API token agar hanya sistem Layer 2 resmi yang dapat mengakses endpoint update.
+
+## 3) API yang Layer 1 Kirim ke Layer 2 (Status Update)
+
+## POST /api/orders/status-update  *(endpoint di Layer 2)*
+Layer 1 mengirim notifikasi perubahan status order ke Layer 2.
+
+### Kapan dikirim
+| Event                        | Status dikirim |
+|------------------------------|----------------|
+| Order baru dibuat            | `waiting`      |
+| Layer 2 set processing       | `processing`   |
+| Layer 2 set done             | `done`         |
+| Order dibatalkan dari Layer 1| `cancelled`    |
+
+### Body JSON
+```json
+{
+  "order_id":   12,
+  "order_code": "ORD-01JXYZ...",
+  "status":     "waiting|processing|done|cancelled",
+  "note":       "opsional, string keterangan",
+  "updated_at": "2026-04-14T07:00:00+07:00"
+}
+```
+
+### Catatan
+- Layer 1 mengirim fire-and-forget — kegagalan koneksi ke Layer 2 tidak memblokir proses utama.
+- Status `waiting` dikirim bersamaan dengan data order lengkap saat order pertama dibuat.
+- Status `cancelled` hanya dikirim dari Layer 1 (bukan dari Layer 2).

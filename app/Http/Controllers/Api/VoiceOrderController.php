@@ -232,12 +232,13 @@ class VoiceOrderController extends Controller
         });
 
         return response()->json([
-            'status' => 'valid',
-            'order_id' => $result['order']->id,
-            'order_code' => $result['order']->order_code,
-            'queue_number' => $result['queue']->queue_number,
-            'items' => $result['items'],
-            'message' => 'Pesanan Anda: '.$this->readableItemList($result['items']).', nomor antrian '.$result['queue']->queue_number.'.',
+            'status'               => 'valid',
+            'order_id'             => $result['order']->id,
+            'order_code'           => $result['order']->order_code,
+            'queue_number'         => $result['queue']->queue_number,
+            'display_queue_number' => $this->resolveDisplayQueueNumber($result['queue']->queue_number),
+            'items'                => $result['items'],
+            'message'              => 'Pesanan Anda: '.$this->readableItemList($result['items']).', nomor antrian '.$this->resolveDisplayQueueNumber($result['queue']->queue_number).'.',
         ], 201);
     }
 
@@ -985,5 +986,18 @@ class VoiceOrderController extends Controller
         return collect($items)
             ->map(fn (array $item) => $item['name'].($item['qty'] > 1 ? ' x'.$item['qty'] : ''))
             ->implode(', ');
+    }
+
+    /**
+     * Calculate today's sequential display queue number for a given raw queue_number.
+     * e.g. if today's queues are DB numbers 47, 48, 49 → display as 1, 2, 3.
+     */
+    private function resolveDisplayQueueNumber(int $rawQueueNumber): int
+    {
+        return \App\Models\OrderQueue::query()
+            ->join('orders', 'orders.id', '=', 'order_queues.order_id')
+            ->whereDate('orders.created_at', today())
+            ->where('order_queues.queue_number', '<=', $rawQueueNumber)
+            ->count();
     }
 }

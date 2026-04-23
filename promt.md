@@ -33,4 +33,4 @@ Penjelasan perubahan (apa yang di-upgrade dan kenapa)
 
 Jangan hanya mengganti warna. Fokus pada peningkatan kualitas desain secara menyeluruh.
 
-sesuaikan juga nama aplikasinya sesuai dengan sistem saya
+sesuaikan juga nama aplikasinya Prepza

@@ -1786,7 +1786,7 @@
                             const data = response.data;
 
                             this.finalItems = data.items || [];
-                            this.queueNumber = data.queue_number || null;
+                            this.queueNumber = data.display_queue_number ?? data.queue_number ?? null;
                             this.orderCode = data.order_code || '';
                             this.lastOrderCustomerName = this.customerName;
                             this.lastOrderCustomerGender = this.customerGender;

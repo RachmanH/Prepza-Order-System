@@ -15,7 +15,7 @@
     <div class="py-8" x-data="queueBoard()" x-init="init()">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-5">
 
-            {{-- Status Bar --}}
+            <!-- {{-- Status Bar --}}
             <div class="flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-5 py-3 shadow-sm">
                 <div class="flex items-center gap-3">
                     <span class="relative flex h-2.5 w-2.5">
@@ -27,7 +27,7 @@
                     <span class="text-sm font-semibold capitalize text-slate-700" x-text="boardState"></span>
                 </div>
                 <p class="text-xs text-slate-400">Sinkron: <span class="font-medium text-slate-600" x-text="lastSyncedAt"></span></p>
-            </div>
+            </div> -->
 
             {{-- Main Grid --}}
             <div class="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -67,16 +67,19 @@
                             </template>
                             <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4">
                                 <template x-for="(item, idx) in upcoming" :key="item.order_id">
-                                    <div class="flex flex-col items-center rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                                                <div class="flex flex-col items-center rounded-xl border p-3 text-center"
+                                                      :class="item.status === 'processing' ? 'border-sky-200 bg-sky-50/70' : 'border-slate-200 bg-slate-50'">
                                         <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400"
                                            x-text="`#${idx + 1}`"></p>
+                                                     <span class="mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                                                             :class="item.status === 'processing' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'"
+                                                             x-text="item.status === 'processing' ? 'Sedang Diproses' : 'Menunggu'"></span>
                                         <p class="mt-1 text-3xl font-black text-slate-800"
                                            x-text="queueLabel(item.display_queue_number ?? item.queue_number)"></p>
                                         <p class="mt-1 truncate text-[11px] text-slate-500 w-full"
                                            x-text="item.customer_name || 'Pelanggan'"></p>
                                         <button type="button"
                                                 @click="replayQueueCall(item.display_queue_number ?? item.queue_number, item.customer_name)"
-                                                :disabled="!audioEnabled"
                                                 class="mt-2 w-full rounded-lg border border-sky-200 bg-white px-2 py-1 text-[10px] font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 transition">
                                             Replay
                                         </button>
@@ -104,15 +107,15 @@
                     </div>
                 </div>
 
-                {{-- RIGHT: Trends Carousel + Audio + Done --}}
+                {{-- RIGHT: Trends Carousel + Audio --}}
                 <div class="lg:col-span-5 space-y-5">
 
-                    {{-- Trends Carousel --}}
+                    {{-- Trends Carousel: Male --}}
                     <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-md"
-                         x-data="trendCarousel()"
-                         @trends-updated.window="setSlides($event.detail.trends || [])">
+                         x-data="trendCarousel('male')"
+                         @trends-updated.window="setSlides($event.detail || {})">
                         <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Rekomendasi Menu</p>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Rekomendasi Menu Pria</p>
                             <div class="flex items-center gap-2" x-show="slides.length > 1">
                                 <button @click="prev()" class="flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition">
                                     <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
@@ -128,26 +131,16 @@
                             </div>
                         </div>
 
-                        {{-- Slide --}}
                         <template x-if="slides.length > 0">
                             <div>
                                 <div class="relative overflow-hidden">
                                     <img :src="slides[current].image_url"
                                          :alt="slides[current].title"
-                                         class="h-48 w-full object-cover transition-opacity duration-300"
+                                         class="h-40 w-full object-cover transition-opacity duration-300"
                                          :key="slides[current].id">
-                                    {{-- Gender badge --}}
                                     <div class="absolute left-3 top-3">
-                                        <span class="rounded-full px-2.5 py-1 text-xs font-bold shadow-sm"
-                                              :class="{
-                                                'bg-blue-500 text-white':   slides[current].gender_target === 'male',
-                                                'bg-pink-500 text-white':   slides[current].gender_target === 'female',
-                                                'bg-slate-700 text-white':  slides[current].gender_target === 'all',
-                                              }"
-                                              x-text="slides[current].gender_target === 'male' ? '♂ Pria' : slides[current].gender_target === 'female' ? '♀ Wanita' : '✦ Semua'">
-                                        </span>
+                                        <span class="rounded-full bg-blue-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm">♂ Pria</span>
                                     </div>
-                                    {{-- Score badge --}}
                                     <template x-if="slides[current].score !== null">
                                         <div class="absolute right-3 top-3">
                                             <span class="rounded-full bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm"
@@ -159,21 +152,64 @@
                                     <p class="text-sm font-bold text-slate-900" x-text="slides[current].title"></p>
                                     <p class="mt-1 text-xs text-slate-500 leading-relaxed" x-text="slides[current].caption || ''"></p>
                                 </div>
-                                {{-- Dots --}}
-                                <div class="flex justify-center gap-1.5 pb-4" x-show="slides.length > 1">
-                                    <template x-for="(_, i) in slides" :key="i">
-                                        <button @click="current = i"
-                                                class="h-1.5 rounded-full transition-all duration-200"
-                                                :class="i === current ? 'w-5 bg-sky-600' : 'w-1.5 bg-slate-300'">
-                                        </button>
+                            </div>
+                        </template>
+
+                        <template x-if="slides.length === 0">
+                            <div class="flex h-28 items-center justify-center">
+                                <p class="text-sm text-slate-400">Belum ada rekomendasi pria</p>
+                            </div>
+                        </template>
+                    </div>
+
+                    {{-- Trends Carousel: Female --}}
+                    <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-md"
+                         x-data="trendCarousel('female')"
+                         @trends-updated.window="setSlides($event.detail || {})">
+                        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Rekomendasi Menu Wanita</p>
+                            <div class="flex items-center gap-2" x-show="slides.length > 1">
+                                <button @click="prev()" class="flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition">
+                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                                    </svg>
+                                </button>
+                                <span class="text-xs text-slate-400" x-text="`${current + 1}/${slides.length}`"></span>
+                                <button @click="next()" class="flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition">
+                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <template x-if="slides.length > 0">
+                            <div>
+                                <div class="relative overflow-hidden">
+                                    <img :src="slides[current].image_url"
+                                         :alt="slides[current].title"
+                                         class="h-40 w-full object-cover transition-opacity duration-300"
+                                         :key="slides[current].id">
+                                    <div class="absolute left-3 top-3">
+                                        <span class="rounded-full bg-pink-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm">♀ Wanita</span>
+                                    </div>
+                                    <template x-if="slides[current].score !== null">
+                                        <div class="absolute right-3 top-3">
+                                            <span class="rounded-full bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm"
+                                                  x-text="`🔥 ${slides[current].score}`"></span>
+                                        </div>
                                     </template>
+                                </div>
+                                <div class="p-4">
+                                    <p class="text-sm font-bold text-slate-900" x-text="slides[current].title"></p>
+                                    <p class="mt-1 text-xs text-slate-500 leading-relaxed" x-text="slides[current].caption || ''"></p>
                                 </div>
                             </div>
                         </template>
 
                         <template x-if="slides.length === 0">
-                            <div class="flex h-40 items-center justify-center">
-                                <p class="text-sm text-slate-400">Belum ada rekomendasi dari Layer 2</p>
+                            <div class="flex h-28 items-center justify-center">
+                                <p class="text-sm text-slate-400">Belum ada rekomendasi wanita</p>
                             </div>
                         </template>
                     </div>
@@ -182,42 +218,33 @@
                     <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-md">
                         <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Audio Pengumuman</p>
                         <p class="mt-1.5 text-xs text-slate-500 leading-relaxed">
-                            Nama pelanggan dan nomor antrian dipanggil otomatis saat status berubah.
+                            Nama pelanggan dan nomor antrian dipanggil otomatis saat status berubah. Audio selalu aktif.
                         </p>
                         <div class="mt-4 flex flex-wrap gap-2">
-                            <button type="button" @click="toggleAudio()"
-                                    class="rounded-xl px-4 py-2 text-xs font-semibold text-white transition"
-                                    :class="audioEnabled ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-sky-600 hover:bg-sky-700'"
-                                    x-text="audioEnabled ? '🔊 Audio Aktif' : '🔇 Aktifkan Audio'">
-                            </button>
-                            <button type="button" @click="replayLastAnnouncement()"
-                                    :disabled="!audioEnabled || !lastAnnouncementText"
-                                    class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition">
-                                Replay Terakhir
-                            </button>
+                            <span class="rounded-xl bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">🔊 Audio Aktif (Fix)</span>
                         </div>
                     </div>
 
-                    {{-- Recent Done --}}
-                    <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-md">
-                        <div class="flex items-center justify-between">
-                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Pesanan Selesai</p>
-                            <span class="text-[11px] text-slate-400">max 8</span>
-                        </div>
-                        <div class="mt-3 flex flex-wrap gap-2">
-                            <template x-if="recentDone.length === 0">
-                                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">Belum ada</span>
-                            </template>
-                            <template x-for="item in recentDone.slice(0, 8)" :key="`done-${item.order_id}`">
-                                <button type="button"
-                                        @click="replayDoneAnnouncement(item.display_queue_number ?? item.queue_number, item.customer_name)"
-                                        :disabled="!audioEnabled"
-                                        class="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 disabled:opacity-40 transition"
-                                        x-text="queueLabel(item.display_queue_number ?? item.queue_number)">
-                                </button>
-                            </template>
-                        </div>
-                    </div>
+                </div>
+            </div>
+
+            {{-- Recent Done --}}
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-md">
+                <div class="flex items-center justify-between">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Pesanan Selesai</p>
+                    <span class="text-[11px] text-slate-400">max 8</span>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <template x-if="recentDone.length === 0">
+                        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">Belum ada</span>
+                    </template>
+                    <template x-for="item in recentDone.slice(0, 8)" :key="`done-${item.order_id}`">
+                        <button type="button"
+                                @click="replayDoneAnnouncement(item.display_queue_number ?? item.queue_number, item.customer_name)"
+                                class="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 disabled:opacity-40 transition"
+                                x-text="queueLabel(item.display_queue_number ?? item.queue_number)">
+                        </button>
+                    </template>
                 </div>
             </div>
 
@@ -237,7 +264,7 @@
         </style>
 
         <script>
-            function trendCarousel() {
+            function trendCarousel(genderKey = 'male') {
                 return {
                     slides: [],
                     current: 0,
@@ -247,9 +274,18 @@
                         this.startAutoPlay();
                     },
 
-                    setSlides(trends) {
-                        this.slides = trends;
-                        if (this.current >= this.slides.length) this.current = 0;
+                    setSlides(payload) {
+                        const isLegacyArray = Array.isArray(payload);
+                        const trends = isLegacyArray ? payload : (payload.trends || []);
+                        const trendsByGender = !isLegacyArray && payload.trendsByGender && typeof payload.trendsByGender === 'object'
+                            ? payload.trendsByGender
+                            : {};
+
+                        const selected = trendsByGender[genderKey] || trends;
+                        this.slides = Array.isArray(selected) ? selected : [];
+                        if (this.current >= this.slides.length) {
+                            this.current = 0;
+                        }
                     },
 
                     next() {
@@ -283,16 +319,18 @@
                     upcoming: [],
                     recentDone: [],
                     __trends: [],          // shared with trendCarousel via $root
+                    __trendsByGender: {
+                        all: [],
+                        male: [],
+                        female: [],
+                    },
                     boardState: 'connecting',
                     lastSyncedAt: '-',
-                    audioEnabled: false,
                     lastAnnouncementText: '',
                     announcedDoneSet: new Set(),
                     hasHydratedDoneState: false,
 
                     init() {
-                        const saved = localStorage.getItem('queue-board-audio-enabled');
-                        this.audioEnabled = saved === '1';
                         this.lastAnnouncementText = localStorage.getItem('queue-board-last-announcement') || '';
 
                         try {
@@ -315,8 +353,14 @@
                             this.upcoming   = data.upcoming   || [];
                             this.recentDone = data.recent_done || [];
                             this.__trends   = data.trends     || [];
-                            this.$dispatch('trends-updated', { trends: this.__trends });
-                            window.dispatchEvent(new CustomEvent('trends-updated', { detail: { trends: this.__trends } }));
+                            this.__trendsByGender = data.trends_by_gender || { all: [], male: [], female: [] };
+                            const trendPayload = {
+                                trends: this.__trends,
+                                trendsByGender: this.__trendsByGender,
+                            };
+
+                            this.$dispatch('trends-updated', trendPayload);
+                            window.dispatchEvent(new CustomEvent('trends-updated', { detail: trendPayload }));
 
                             this.lastSyncedAt = new Date().toLocaleTimeString('id-ID');
                             this.boardState   = this.current ? 'online' : 'standby';
@@ -332,13 +376,8 @@
                         return Number.isNaN(n) ? String(value) : `A${n}`;
                     },
 
-                    toggleAudio() {
-                        this.audioEnabled = !this.audioEnabled;
-                        localStorage.setItem('queue-board-audio-enabled', this.audioEnabled ? '1' : '0');
-                    },
-
                     speakText(text, cancelPrevious = true) {
-                        if (!this.audioEnabled || !window.speechSynthesis) return;
+                        if (!window.speechSynthesis) return;
                         const t = String(text || '').trim();
                         if (!t) return;
                         this.lastAnnouncementText = t;
@@ -363,12 +402,8 @@
                         this.speakText(`${prefix ? prefix + ', ' : ''}pesanan nomor antrian ${label} sudah selesai.`, cancelPrevious);
                     },
 
-                    replayLastAnnouncement() {
-                        if (this.lastAnnouncementText) this.speakText(this.lastAnnouncementText);
-                    },
-
                     announceDoneIfNeeded() {
-                        if (!this.audioEnabled || !window.speechSynthesis) {
+                        if (!window.speechSynthesis) {
                             if (!this.hasHydratedDoneState) {
                                 this.recentDone.forEach((i) => this.announcedDoneSet.add(String(i.announce_key || i.queue_number)));
                                 this.hasHydratedDoneState = true;

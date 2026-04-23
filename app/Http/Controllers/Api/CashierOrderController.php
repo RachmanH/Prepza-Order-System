@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\QueueTrend;
 use App\Services\GroqService;
+use App\Services\Layer2NotifierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -19,7 +20,10 @@ use Throwable;
 
 class CashierOrderController extends Controller
 {
-    public function __construct(private readonly GroqService $groqService) {}
+    public function __construct(
+        private readonly GroqService $groqService,
+        private readonly Layer2NotifierService $layer2,
+    ) {}
 
     public function board(): JsonResponse
     {
@@ -58,7 +62,8 @@ class CashierOrderController extends Controller
             ?? $effectiveRows->first(fn ($row) => $row->effective_status === 'waiting');
 
         $upcoming = $effectiveRows
-            ->filter(fn ($row) => $row->effective_status === 'waiting')
+            ->filter(fn ($row) => in_array($row->effective_status, ['waiting', 'processing'], true))
+            ->reject(fn ($row) => $current && (int) $row->id === (int) $current->id)
             ->take(6)
             ->values()
             ->map(fn ($row): array => [
@@ -67,6 +72,7 @@ class CashierOrderController extends Controller
                 'display_queue_number' => $row->display_queue_number,
                 'order_code' => $row->order_code,
                 'customer_name' => $row->customer_name,
+                'status' => $row->effective_status,
             ])
             ->all();
 
@@ -91,6 +97,7 @@ class CashierOrderController extends Controller
             ->all();
 
         $trend = $this->activeTrend();
+        $trendsByGender = $this->activeTrendsByGender();
 
         return response()->json([
             'data' => [
@@ -106,6 +113,7 @@ class CashierOrderController extends Controller
                 'recent_done' => $recentDone,
                 'trend'       => $trend,
                 'trends'      => is_array($trend) ? $trend : ($trend ? [$trend] : []),
+                'trends_by_gender' => $trendsByGender,
                 'server_time' => now()->toIso8601String(),
             ],
         ]);
@@ -168,17 +176,14 @@ class CashierOrderController extends Controller
     private function activeTrend(): ?array
     {
         // Return up to 5 active trends for carousel — ordered by gender_target priority then recency
-        $trends = QueueTrend::query()
-            ->where('is_active', true)
-            ->where(function ($query): void {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
+        $trends = $this->activeTrendCollection(12)
+            ->sortBy(fn (QueueTrend $trend) => match ($trend->gender_target) {
+                'female' => 0,
+                'male' => 1,
+                default => 2,
             })
-            ->orderByRaw("CASE gender_target WHEN 'female' THEN 0 WHEN 'male' THEN 1 ELSE 2 END")
-            ->orderByDesc('source_timestamp')
-            ->orderByDesc('id')
-            ->limit(5)
-            ->get();
+            ->take(5)
+            ->values();
 
         if ($trends->isEmpty()) {
             return null;
@@ -186,6 +191,54 @@ class CashierOrderController extends Controller
 
         // Return array of trends for carousel; keep single-item backward compat via first element
         return $trends->map(fn (QueueTrend $t): array => $this->serializeTrend($t))->values()->all();
+    }
+
+    /**
+     * @return array{all:array<int,array<string,mixed>>,male:array<int,array<string,mixed>>,female:array<int,array<string,mixed>>}
+     */
+    private function activeTrendsByGender(): array
+    {
+        $trends = $this->activeTrendCollection(20)
+            ->map(fn (QueueTrend $trend): array => $this->serializeTrend($trend))
+            ->values();
+
+        $all = $trends
+            ->filter(fn (array $trend): bool => ($trend['gender_target'] ?? 'all') === 'all')
+            ->take(5)
+            ->values()
+            ->all();
+
+        $male = $trends
+            ->filter(fn (array $trend): bool => in_array($trend['gender_target'] ?? 'all', ['male', 'all'], true))
+            ->take(5)
+            ->values()
+            ->all();
+
+        $female = $trends
+            ->filter(fn (array $trend): bool => in_array($trend['gender_target'] ?? 'all', ['female', 'all'], true))
+            ->take(5)
+            ->values()
+            ->all();
+
+        return [
+            'all' => $all,
+            'male' => $male,
+            'female' => $female,
+        ];
+    }
+
+    private function activeTrendCollection(int $limit = 12): Collection
+    {
+        return QueueTrend::query()
+            ->where('is_active', true)
+            ->where(function ($query): void {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->orderByDesc('source_timestamp')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
     }
 
     private function serializeTrend(QueueTrend $trend): array
@@ -250,26 +303,27 @@ class CashierOrderController extends Controller
     {
         if ($order->status === 'done') {
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => 'Order yang sudah selesai tidak bisa dibatalkan.',
             ], 422);
         }
 
         DB::transaction(function () use ($order): void {
-            $order->update([
-                'status' => 'cancelled',
-            ]);
+            $order->update(['status' => 'cancelled']);
 
             if ($order->queue) {
                 $order->queue->update([
-                    'status' => 'done',
+                    'status'  => 'done',
                     'done_at' => now(),
                 ]);
             }
         });
 
+        // Notify Layer 2 about cancellation
+        $this->layer2->notifyStatusChange($order, 'cancelled', 'Order dibatalkan dari Layer 1.');
+
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'Order dibatalkan.',
         ]);
     }
@@ -342,10 +396,16 @@ class CashierOrderController extends Controller
 
         $order->load(['items:id,order_id,item_name,note,qty,subtotal', 'queue:queue_number,order_id,status']);
 
+        // Notify Layer 2 about the status change (processing / done / waiting / cancelled)
+        $newStatus = $payload['queue_status'] ?? $payload['external_status'] ?? null;
+        if ($newStatus) {
+            $this->layer2->notifyStatusChange($order, $newStatus, $payload['external_note'] ?? null);
+        }
+
         return response()->json([
-            'status' => 'ok',
-            'message' => 'Simulasi input eksternal berhasil diproses.',
-            'order' => $order,
+            'status'     => 'ok',
+            'message'    => 'Simulasi input eksternal berhasil diproses.',
+            'order'      => $order,
             'updated_by' => Auth::id(),
         ]);
     }
