@@ -136,7 +136,7 @@
                                 <div class="relative overflow-hidden">
                                     <img :src="slides[current].image_url"
                                          :alt="slides[current].title"
-                                         class="h-40 w-full object-cover transition-opacity duration-300"
+                                         class="h-48 w-full object-cover object-center transition-opacity duration-300 lg:h-52"
                                          :key="slides[current].id">
                                     <div class="absolute left-3 top-3">
                                         <span class="rounded-full bg-blue-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm">♂ Pria</span>
@@ -188,7 +188,7 @@
                                 <div class="relative overflow-hidden">
                                     <img :src="slides[current].image_url"
                                          :alt="slides[current].title"
-                                         class="h-40 w-full object-cover transition-opacity duration-300"
+                                         class="h-48 w-full object-cover object-center transition-opacity duration-300 lg:h-52"
                                          :key="slides[current].id">
                                     <div class="absolute left-3 top-3">
                                         <span class="rounded-full bg-pink-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm">♀ Wanita</span>
@@ -212,17 +212,6 @@
                                 <p class="text-sm text-slate-400">Belum ada rekomendasi wanita</p>
                             </div>
                         </template>
-                    </div>
-
-                    {{-- Audio Controls --}}
-                    <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-md">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Audio Pengumuman</p>
-                        <p class="mt-1.5 text-xs text-slate-500 leading-relaxed">
-                            Nama pelanggan dan nomor antrian dipanggil otomatis saat status berubah. Audio selalu aktif.
-                        </p>
-                        <div class="mt-4 flex flex-wrap gap-2">
-                            <span class="rounded-xl bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">🔊 Audio Aktif (Fix)</span>
-                        </div>
                     </div>
 
                 </div>
